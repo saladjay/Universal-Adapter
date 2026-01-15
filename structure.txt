@@ -1,0 +1,272 @@
+下面给你一份 **可以直接拿去立项 / 评审 / 开发的技术需求文档（TRD）**，是为你这种**多海外LLM统一接入 + 成本控制 + 可配置化**场景量身设计的。
+它兼容你前面提到的 **OpenAI / Gemini / Cloudflare / HuggingFace**，并且为你后续做 **用户画像 + 对话策略路由** 留好了扩展位。
+
+---
+
+# 《多海外 LLM 统一接入与计费监控系统》
+
+**LLM Adapter & Cost Controller 技术需求文档**
+
+---
+
+## 1. 项目背景
+
+随着 OpenAI、Google Gemini、Cloudflare Workers AI、HuggingFace 等模型平台并行发展，不同模型在：
+
+* 成本
+* 响应速度
+* 推理能力
+* 合规性（海外可用性）
+
+上差异极大。
+
+**单一 LLM 平台无法同时满足：**
+
+* 低成本
+* 高可用
+* 高质量
+* 灵活路由
+
+因此需要构建一个 **“统一 LLM 接入层（LLM Adapter）”**，对外提供一个 API，对内调度多个海外大模型平台，并实时监控 token 与费用。
+
+---
+
+## 2. 总体目标
+
+构建一个系统，使上层应用（对话系统、用户画像引擎、推荐引擎）：
+
+只需调用：
+
+```ts
+generate({
+   userId,
+   prompt,
+   scene,
+   qualityLevel
+})
+```
+
+底层自动完成：
+
+* 选择最优 LLM（OpenAI / Gemini / CF / HF）
+* 发起调用
+* 统计 Token
+* 计算成本
+* 记录账单
+
+---
+
+## 3. 系统架构
+
+```
+                ┌────────────┐
+                │  APP / Bot │
+                └─────┬──────┘
+                      │
+                ┌─────▼────────┐
+                │   LLMAdapter  │
+                │ (统一入口API) │
+                └─────┬────────┘
+                      │
+          ┌───────────┼───────────────────┐
+          │           │                   │
+   ┌──────▼─────┐ ┌───▼────────┐ ┌────────▼───────┐
+   │ OpenAI SDK │ │ Gemini SDK │ │ Cloudflare AI  │
+   └────────────┘ └────────────┘ └────────────────┘
+                          │
+                    ┌─────▼─────┐
+                    │ HuggingFace│
+                    └────────────┘
+
+                      │
+               ┌──────▼─────────┐
+               │ Token & Billing │
+               └────────────────┘
+```
+
+---
+
+## 4. 核心模块
+
+### 4.1 LLMAdapter（统一接口）
+
+```ts
+interface LLMRequest {
+  userId: string
+  prompt: string
+  scene: "chat" | "coach" | "persona" | "system"
+  quality: "low" | "medium" | "high"
+}
+
+interface LLMResponse {
+  text: string
+  model: string
+  provider: string
+  inputTokens: number
+  outputTokens: number
+  costUSD: number
+}
+```
+
+```ts
+generate(req: LLMRequest): Promise<LLMResponse>
+```
+
+---
+
+### 4.2 Provider Adapter 规范
+
+所有平台实现同一接口：
+
+```ts
+interface ProviderAdapter {
+  name: "openai" | "gemini" | "cloudflare" | "huggingface"
+  generate(prompt: string): Promise<RawLLMResult>
+  estimateTokens(prompt, output): TokenUsage
+}
+```
+
+---
+
+### 4.3 Token 统计模块
+
+不同平台不同：
+
+| 平台          | Token 获取方式                                     |
+| ----------- | ---------------------------------------------- |
+| OpenAI      | API 返回 usage.prompt_tokens / completion_tokens |
+| Gemini      | API 返回 tokenMetadata                           |
+| Cloudflare  | 通过 neurons → token 估算表                         |
+| HuggingFace | 用 tokenizer 本地估算                               |
+
+统一格式：
+
+```ts
+{
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+```
+
+---
+
+### 4.4 实时计费引擎
+
+```ts
+interface PricingRule {
+  provider: string
+  model: string
+  inputCostPer1M: number
+  outputCostPer1M: number
+}
+```
+
+实时计算：
+
+```
+cost =
+ (inputTokens / 1_000_000) * inputPrice +
+ (outputTokens / 1_000_000) * outputPrice
+```
+
+---
+
+## 5. config 统一配置（核心）
+
+```yaml
+llm:
+  default_provider: openai
+
+providers:
+  openai:
+    api_key: ${OPENAI_API_KEY}
+    base_url: https://api.openai.com
+    models:
+      cheap: gpt-5-nano
+      normal: gpt-5-mini
+      premium: gpt-5.2
+
+  gemini:
+    api_key: ${GEMINI_API_KEY}
+    models:
+      cheap: gemini-1.5-flash
+      premium: gemini-1.5-pro
+
+  cloudflare:
+    api_key: ${CF_API_KEY}
+    account_id: ${CF_ACCOUNT_ID}
+    models:
+      cheap: "@cf/meta/llama-3-8b-instruct"
+
+  huggingface:
+    api_key: ${HF_TOKEN}
+    default_model: meta-llama/Llama-3.1-8B-Instruct
+```
+
+---
+
+## 6. 智能路由策略（示例）
+
+```ts
+if (req.quality === "low") {
+  return cloudflare or huggingface
+}
+
+if (req.quality === "medium") {
+  return openai-mini or gemini-flash
+}
+
+if (req.quality === "high") {
+  return openai or gemini-pro
+}
+```
+
+---
+
+## 7. 账单 & 用户维度
+
+```ts
+interface UsageLog {
+  userId
+  provider
+  model
+  inputTokens
+  outputTokens
+  cost
+  timestamp
+}
+```
+
+可用于：
+
+* 用户额度限制
+* 成本分析
+* A/B 测试
+* 商业计费
+
+---
+
+## 8. 为什么这个架构非常适合你
+
+你之前在做 **用户画像 + 对话策略系统**，这个 LLM Adapter 能：
+
+* 给你的用户画像系统提供：
+
+  * “成本感知型回复”
+  * “质量感知型回复”
+* 实现：
+
+  * VIP 用 GPT-5
+  * 普通用户用 Gemini Flash
+  * 测试用户走 Cloudflare
+
+这是**商业级 AI 对话系统的标配中枢**。
+
+---
+
+如果你愿意，我可以下一步帮你输出：
+
+> 🧩 一个 **TypeScript / Python 的真实项目骨架（含 adapters / config / billing / router）**
+
+可以直接变成你 GitHub 项目的第一个 commit。
