@@ -118,25 +118,36 @@ class ConfigManager:
         
         return self._parse_config(raw_config)
     
-    def _substitute_env_vars(self, obj: Any) -> Any:
+    def _substitute_env_vars(self, obj: Any, skip_missing: bool = False) -> Any:
         """
         Recursively substitute environment variables in configuration.
         
         Supports ${VAR_NAME} syntax. If environment variable is not set,
-        raises ConfigError.
+        returns None when skip_missing=True, otherwise raises ConfigError.
+        
+        Args:
+            obj: Object to process
+            skip_missing: If True, return None for missing env vars instead of raising
         """
         if isinstance(obj, str):
             def replace_env_var(match: re.Match) -> str:
                 var_name = match.group(1)
                 value = os.environ.get(var_name)
                 if value is None:
+                    if skip_missing:
+                        return ""  # Return empty string as marker
                     raise ConfigError(f"Environment variable not set: {var_name}")
                 return value
-            return self.ENV_VAR_PATTERN.sub(replace_env_var, obj)
+            
+            result = self.ENV_VAR_PATTERN.sub(replace_env_var, obj)
+            # If the entire string was an env var that wasn't set, return None
+            if skip_missing and result == "" and self.ENV_VAR_PATTERN.search(obj):
+                return None
+            return result
         elif isinstance(obj, dict):
-            return {k: self._substitute_env_vars(v) for k, v in obj.items()}
+            return {k: self._substitute_env_vars(v, skip_missing) for k, v in obj.items()}
         elif isinstance(obj, list):
-            return [self._substitute_env_vars(item) for item in obj]
+            return [self._substitute_env_vars(item, skip_missing) for item in obj]
         return obj
     
     def _parse_config(self, raw: dict) -> Config:
@@ -152,7 +163,7 @@ class ConfigManager:
                 default_provider=llm_raw.get('default_provider', 'openai')
             )
         
-        # Parse providers
+        # Parse providers (skip those without valid API keys)
         if 'providers' in raw:
             providers_raw = raw['providers']
             if not isinstance(providers_raw, dict):
@@ -161,6 +172,18 @@ class ConfigManager:
             for provider_name, provider_data in providers_raw.items():
                 if not isinstance(provider_data, dict):
                     raise ConfigError(f"Provider '{provider_name}' configuration must be a mapping")
+                
+                # Substitute env vars for this provider, skipping missing ones
+                try:
+                    provider_data = self._substitute_env_vars(provider_data, skip_missing=True)
+                except ConfigError:
+                    # Skip provider if env var substitution fails
+                    continue
+                
+                # Skip provider if api_key is missing or empty
+                api_key = provider_data.get('api_key')
+                if not api_key or api_key.strip() == '':
+                    continue
                 
                 # Parse models
                 models_raw = provider_data.get('models', {})
@@ -177,7 +200,7 @@ class ConfigManager:
                     models = ModelConfig()
                 
                 config.providers[provider_name] = ProviderConfig(
-                    api_key=provider_data.get('api_key', ''),
+                    api_key=api_key,
                     models=models,
                     base_url=provider_data.get('base_url'),
                     account_id=provider_data.get('account_id'),
@@ -248,6 +271,42 @@ class ConfigManager:
     def get_default_provider(self) -> str:
         """Get the default provider name."""
         return self.config.llm.default_provider
+    
+    def get_available_providers(self) -> list[str]:
+        """
+        Get list of all configured and available providers.
+        
+        Returns:
+            List of provider names that have valid API keys configured
+        """
+        return list(self.config.providers.keys())
+    
+    def get_provider_models(self, provider: str) -> dict[str, str]:
+        """
+        Get all available models for a provider.
+        
+        Args:
+            provider: Provider name
+            
+        Returns:
+            Dictionary mapping tier names to model names
+            
+        Raises:
+            ConfigError: If provider is not configured
+        """
+        provider_config = self.get_provider_config(provider)
+        models = {}
+        
+        if provider_config.models.cheap:
+            models['cheap'] = provider_config.models.cheap
+        if provider_config.models.normal:
+            models['normal'] = provider_config.models.normal
+        if provider_config.models.premium:
+            models['premium'] = provider_config.models.premium
+        if provider_config.default_model and not models:
+            models['default'] = provider_config.default_model
+            
+        return models
     
     def get_model_for_quality(self, provider: str, quality: str) -> str:
         """

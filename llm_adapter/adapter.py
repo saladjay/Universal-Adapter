@@ -360,15 +360,110 @@ class LLMAdapter:
     
     def get_available_providers(
         self, 
-        quality: Literal["low", "medium", "high"]
-    ) -> list[tuple[str, str]]:
+        quality: Literal["low", "medium", "high"] | None = None
+    ) -> list[tuple[str, str]] | list[str]:
         """
-        Get list of available providers for a quality level.
+        Get list of available providers.
         
         Args:
-            quality: Quality level
+            quality: Optional quality level. If provided, returns (provider, model) tuples
+                    for that quality. If None, returns all configured provider names.
             
         Returns:
-            List of (provider, model) tuples
+            If quality is provided: List of (provider, model) tuples
+            If quality is None: List of provider names
         """
-        return self._router.get_available_providers(quality)
+        if quality:
+            return self._router.get_available_providers(quality)
+        return self._config_manager.get_available_providers()
+    
+    def get_provider_models(self, provider: str) -> dict[str, str]:
+        """
+        Get all available models for a provider.
+        
+        Args:
+            provider: Provider name
+            
+        Returns:
+            Dictionary mapping tier names (cheap/normal/premium) to model names
+        """
+        return self._config_manager.get_provider_models(provider)
+    
+    async def generate_with_provider(
+        self,
+        user_id: str,
+        prompt: str,
+        provider: str,
+        model: str,
+        scene: Literal["chat", "coach", "persona", "system"] = "chat",
+    ) -> LLMResponse:
+        """
+        Generate a response using a specific provider and model.
+        
+        This bypasses the router and directly calls the specified provider/model.
+        
+        Args:
+            user_id: User identifier for logging and billing
+            prompt: The input prompt to send to the LLM
+            provider: Provider name (e.g., 'openai', 'gemini', 'dashscope')
+            model: Model name (e.g., 'gpt-4o', 'gemini-1.5-flash', 'qwen-plus')
+            scene: Usage scene (default: 'chat')
+            
+        Returns:
+            LLMResponse with generated text, token counts, and cost
+            
+        Raises:
+            ValidationError: If request parameters are invalid
+            LLMAdapterError: If the provider call fails
+        """
+        # Validate basic parameters
+        if not user_id or not user_id.strip():
+            raise ValidationError(["user_id is required and cannot be empty"])
+        if not prompt or not prompt.strip():
+            raise ValidationError(["prompt is required and cannot be empty"])
+        
+        # Get adapter and generate
+        try:
+            adapter = self._get_adapter(provider)
+            result = await adapter.generate(prompt, model)
+        except ProviderError as e:
+            raise LLMAdapterError(f"Provider error: {e}")
+        
+        # Get token usage
+        if result.input_tokens is not None and result.output_tokens is not None:
+            input_tokens = result.input_tokens
+            output_tokens = result.output_tokens
+        else:
+            token_usage = adapter.estimate_tokens(prompt, result.text)
+            input_tokens = token_usage.input_tokens
+            output_tokens = token_usage.output_tokens
+        
+        # Calculate cost
+        try:
+            cost_usd = self._billing.calculate_cost(
+                provider=provider,
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+        except BillingError:
+            cost_usd = 0.0
+        
+        # Log usage
+        self._logger.log(
+            user_id=user_id,
+            provider=provider,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=cost_usd,
+        )
+        
+        return LLMResponse(
+            text=result.text,
+            model=model,
+            provider=provider,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd,
+        )

@@ -6,7 +6,7 @@ llm:
 
 providers:
   openai:
-    api_key: ${OPENAI_API_KEY}
+    api_key: 
     base_url: https://api.openai.com
     models:
       cheap: gpt-4o-mini
@@ -16,34 +16,34 @@ providers:
   gemini:
     api_key: REDACTED_GOOGLE_API_KEY
     models:
-      cheap: gemini-1.5-flash
-      normal: gemini-1.5-flash
-      premium: gemini-1.5-pro
+      cheap: gemini-2.5-flash
+      normal: gemini-2.5-flash
+      premium: gemini-2.5-flash
 
-  cloudflare:
-    api_key: ${CF_API_KEY}
-    account_id: ${CF_ACCOUNT_ID}
-    models:
-      cheap: "@cf/meta/llama-3-8b-instruct"
-      normal: "@cf/meta/llama-3-8b-instruct"
+  # cloudflare:
+  #   api_key: 
+  #   account_id: ${CF_ACCOUNT_ID}
+  #   models:
+  #     cheap: "@cf/meta/llama-3-8b-instruct"
+  #     normal: "@cf/meta/llama-3-8b-instruct"
 
   huggingface:
-    api_key: ${HF_TOKEN}
+    api_key: 
     default_model: meta-llama/Llama-3.1-8B-Instruct
     models:
       cheap: meta-llama/Llama-3.1-8B-Instruct
       normal: meta-llama/Llama-3.1-8B-Instruct
 
   dashscope:
-    api_key: ${DASHSCOPE_API_KEY}
+    api_key: REDACTED_TOKEN
     base_url: https://dashscope.aliyuncs.com/api/v1
     models:
-      cheap: qwen-turbo
-      normal: qwen-plus
-      premium: qwen-max
+      cheap: qwen-flash
+      normal: qwen-flash
+      premium: qwen-flash
 
   openrouter:
-    api_key: ${OPENROUTER_API_KEY}
+    api_key: 
     base_url: https://openrouter.ai/api/v1
     models:
       cheap: meta-llama/llama-3.1-8b-instruct
