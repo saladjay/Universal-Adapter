@@ -232,6 +232,7 @@ class LLMAdapter:
         """
         failed_providers: set[str] = set()
         last_error: Exception | None = None
+        last_failed_provider: str | None = None
         
         for attempt in range(self.MAX_RETRIES):
             try:
@@ -239,9 +240,14 @@ class LLMAdapter:
                 if attempt == 0:
                     route = self._router.route(request.quality)
                 else:
+                    if last_failed_provider is None:
+                        raise RouterError(
+                            f"No fallback available for quality '{request.quality}' "
+                            "because no failed provider was recorded"
+                        )
                     route = self._router.get_fallback(
                         request.quality, 
-                        failed_provider=list(failed_providers)[-1]
+                        failed_provider=last_failed_provider
                     )
                 
                 provider = route.provider
@@ -299,10 +305,14 @@ class LLMAdapter:
                 
             except ProviderError as e:
                 failed_providers.add(e.provider)
+                last_failed_provider = e.provider
                 last_error = e
                 continue
             except RouterError as e:
-                last_error = e
+                if last_error is not None:
+                    last_error = RouterError(f"{e}. Previous provider error: {last_error}")
+                else:
+                    last_error = e
                 break
             except Exception as e:
                 last_error = e

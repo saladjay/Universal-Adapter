@@ -28,6 +28,8 @@ class Router:
     
     Routes requests based on quality level:
     - low: cloudflare or huggingface (cost-effective)
+    - medium: openai (mini) or gemini (flash) or dashscope (normal)
+    - high: openai (premium) or gemini (pro) or dashscope (premium)
     - medium: openai (mini) or gemini (flash)
     - high: openai (premium) or gemini (pro)
     
@@ -40,14 +42,17 @@ class Router:
         "low": [
             ("cloudflare", "cheap"),
             ("huggingface", "cheap"),
+            ("dashscope", "normal"),  # qwen-* (configured per config.yaml)
         ],
         "medium": [
             ("openai", "cheap"),      # gpt-4o-mini
             ("gemini", "cheap"),      # gemini-1.5-flash
+            ("dashscope", "normal"),  # qwen-* (configured per config.yaml)
         ],
         "high": [
             ("openai", "premium"),    # gpt-4-turbo
             ("gemini", "premium"),    # gemini-1.5-pro
+            ("dashscope", "premium"), # qwen-* (configured per config.yaml)
         ],
     }
     
