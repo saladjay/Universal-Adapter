@@ -101,3 +101,7 @@ pricing:
     anthropic/claude-3-opus:
       input_cost_per_1m: 15.00
       output_cost_per_1m: 75.00
+
+profile:
+  trait_rules:
+    min_confidence_to_count: 0.7
