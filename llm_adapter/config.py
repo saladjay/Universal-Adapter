@@ -117,6 +117,38 @@ class ConfigManager:
         raw_config = self._substitute_env_vars(raw_config)
         
         return self._parse_config(raw_config)
+
+    def get_env_vars_used(self, config_path: str | Path | None = None) -> set[str]:
+        """
+        Scan the config file and return all referenced environment variables.
+
+        Args:
+            config_path: Optional path to override the default config path
+
+        Returns:
+            Set of environment variable names referenced via ${VAR_NAME}
+        """
+        path = Path(config_path) if config_path else self._config_path
+        if not path.exists():
+            raise ConfigError(f"Configuration file not found: {path}")
+        raw_text = path.read_text(encoding="utf-8")
+        return {match.group(1) for match in self.ENV_VAR_PATTERN.finditer(raw_text)}
+
+    def print_env_var_status(self, config_path: str | Path | None = None) -> None:
+        """
+        Print whether referenced environment variables are set (without values).
+
+        Args:
+            config_path: Optional path to override the default config path
+        """
+        env_vars = sorted(self.get_env_vars_used(config_path))
+        if not env_vars:
+            print("No environment variables referenced in config.")
+            return
+        print("Environment variables referenced in config:")
+        for var_name in env_vars:
+            status = "SET" if os.environ.get(var_name) else "MISSING"
+            print(f"- {var_name}: {status}")
     
     def _substitute_env_vars(self, obj: Any, skip_missing: bool = False) -> Any:
         """

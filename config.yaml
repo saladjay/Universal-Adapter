@@ -12,6 +12,7 @@ providers:
       cheap: gpt-4o-mini
       normal: gpt-4o
       premium: gpt-4-turbo
+      multimodal: gpt-4o
 
   gemini:
     api_key: REDACTED_GOOGLE_API_KEY
@@ -19,6 +20,7 @@ providers:
       cheap: gemini-2.5-flash
       normal: gemini-2.5-flash
       premium: gemini-2.5-flash
+      multimodal: gemini-2.5-flash
 
   # cloudflare:
   #   api_key: 
@@ -26,6 +28,7 @@ providers:
   #   models:
   #     cheap: "@cf/meta/llama-3-8b-instruct"
   #     normal: "@cf/meta/llama-3-8b-instruct"
+  #     multimodal: "@cf/meta/llama-3-8b-instruct"
 
   huggingface:
     api_key: 
@@ -33,6 +36,7 @@ providers:
     models:
       cheap: meta-llama/Llama-3.1-8B-Instruct
       normal: meta-llama/Llama-3.1-8B-Instruct
+      multimodal: meta-llama/Llama-3.1-8B-Instruct
 
   dashscope:
     api_key: REDACTED_TOKEN
@@ -41,14 +45,16 @@ providers:
       cheap: qwen-flash
       normal: qwen-flash
       premium: qwen-flash
+      multimodal: qwen-vl-plus
 
   openrouter:
     api_key: 
     base_url: https://openrouter.ai/api/v1
     models:
-      cheap: meta-llama/llama-3.1-8b-instruct
-      normal: anthropic/claude-3.5-sonnet
-      premium: anthropic/claude-3-opus
+      cheap: google/gemini-2.0-flash-001
+      normal: google/gemini-2.5-flash
+      premium: google/gemini-3-flash-preview
+      multimodal: qwen/qwen3-vl-30b-a3b-instruct
 
 pricing:
   openai:
