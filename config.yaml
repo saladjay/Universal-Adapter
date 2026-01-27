@@ -2,7 +2,7 @@
 # Environment variables can be referenced using ${VAR_NAME} syntax
 
 llm:
-  default_provider: openai
+  default_provider: openrouter
 
 providers:
   openai:
@@ -48,8 +48,8 @@ providers:
       multimodal: qwen-vl-plus
 
   openrouter:
-    api_key: 
-    base_url: https://openrouter.ai/api/v1
+    api_key: ${OPENROUTER_API_KEY}
+    base_url: ${OPENROUTER_BASE_URL}
     models:
       cheap: google/gemini-2.0-flash-001
       normal: google/gemini-2.5-flash

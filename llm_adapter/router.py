@@ -40,16 +40,19 @@ class Router:
     QUALITY_ROUTES: dict[str, list[tuple[str, str]]] = {
         # (provider, model_tier)
         "low": [
+            ("openrouter", "cheap"),
             ("cloudflare", "cheap"),
             ("huggingface", "cheap"),
             ("dashscope", "normal"),  # qwen-* (configured per config.yaml)
         ],
         "medium": [
+            ("openrouter", "normal"),
             ("openai", "cheap"),      # gpt-4o-mini
             ("gemini", "cheap"),      # gemini-1.5-flash
             ("dashscope", "normal"),  # qwen-* (configured per config.yaml)
         ],
         "high": [
+            ("openrouter", "premium"),
             ("openai", "premium"),    # gpt-4-turbo
             ("gemini", "premium"),    # gemini-1.5-pro
             ("dashscope", "premium"), # qwen-* (configured per config.yaml)
@@ -89,6 +92,24 @@ class Router:
         
         excluded = excluded_providers or set()
         excluded = excluded.union(self._unavailable_providers)
+
+        # Prefer default_provider when configured and available
+        tier_by_quality: dict[str, str] = {
+            "low": "cheap",
+            "medium": "normal",
+            "high": "premium",
+        }
+        default_provider = self.config_manager.config.llm.default_provider
+        if default_provider and default_provider not in excluded:
+            preferred_tier = tier_by_quality.get(quality)
+            if preferred_tier:
+                model = self._get_model_for_tier(default_provider, preferred_tier)
+                if model:
+                    return RouteResult(
+                        provider=default_provider,
+                        model=model,
+                        is_fallback=False,
+                    )
         
         routes = self.QUALITY_ROUTES[quality]
         is_fallback = False
