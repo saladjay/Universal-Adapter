@@ -2,7 +2,7 @@
 # Environment variables can be referenced using ${VAR_NAME} syntax
 
 llm:
-  default_provider: openai
+  default_provider: dashscope
 
 providers:
   openai:
