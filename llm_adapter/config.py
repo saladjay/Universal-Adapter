@@ -25,6 +25,7 @@ class ModelConfig:
     cheap: str | None = None
     normal: str | None = None
     premium: str | None = None
+    multimodal: str | None = None
 
 
 @dataclass
@@ -95,6 +96,8 @@ class ConfigManager:
             ConfigError: If configuration file is invalid or cannot be loaded
         """
         path = Path(config_path) if config_path else self._config_path
+
+        self._load_env_file_if_present(path)
         
         if not path.exists():
             raise ConfigError(f"Configuration file not found: {path}")
@@ -117,6 +120,35 @@ class ConfigManager:
         raw_config = self._substitute_env_vars(raw_config)
         
         return self._parse_config(raw_config)
+
+    def _load_env_file_if_present(self, config_path: Path) -> None:
+        search_root = config_path if config_path.is_dir() else config_path.parent
+        env_path: Path | None = None
+        for candidate_dir in [search_root, *search_root.parents]:
+            candidate = candidate_dir / ".env"
+            if candidate.exists():
+                env_path = candidate
+                break
+
+        if env_path is None:
+            return
+
+        try:
+            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if not key:
+                    continue
+                if key not in os.environ or os.environ.get(key, "") == "":
+                    os.environ[key] = value
+        except Exception:
+            return
 
     def get_env_vars_used(self, config_path: str | Path | None = None) -> set[str]:
         """
@@ -226,7 +258,8 @@ class ConfigManager:
                     models = ModelConfig(
                         cheap=models_raw.get('cheap'),
                         normal=models_raw.get('normal'),
-                        premium=models_raw.get('premium')
+                        premium=models_raw.get('premium'),
+                        multimodal=models_raw.get('multimodal'),
                     )
                 else:
                     models = ModelConfig()
@@ -335,6 +368,8 @@ class ConfigManager:
             models['normal'] = provider_config.models.normal
         if provider_config.models.premium:
             models['premium'] = provider_config.models.premium
+        if provider_config.models.multimodal:
+            models['multimodal'] = provider_config.models.multimodal
         if provider_config.default_model and not models:
             models['default'] = provider_config.default_model
             
