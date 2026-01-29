@@ -135,6 +135,9 @@ class LLMAdapter:
             kwargs["base_url"] = provider_config.base_url
         if provider_config.account_id:
             kwargs["account_id"] = provider_config.account_id
+        proxy_url = self._config_manager.get_proxy_url()
+        if proxy_url:
+            kwargs["proxy_url"] = proxy_url
         
         adapter = adapter_class(api_key=provider_config.api_key, **kwargs)
         self._adapters[provider] = adapter

@@ -60,7 +60,11 @@ class DashScopeAdapter(ProviderAdapter):
             }
         }
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        client_kwargs = {"timeout": 60.0}
+        proxy_url = self.config.get("proxy_url")
+        if proxy_url:
+            client_kwargs["proxies"] = proxy_url
+        async with httpx.AsyncClient(**client_kwargs) as client:
             try:
                 response = await client.post(url, headers=headers, json=payload)
                 response.raise_for_status()
