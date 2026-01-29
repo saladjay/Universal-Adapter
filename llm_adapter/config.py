@@ -45,11 +45,20 @@ class LLMConfig:
 
 
 @dataclass
+class ProxyConfig:
+    """Proxy configuration for outbound HTTP requests"""
+    enable: bool = False
+    host: str | None = None
+    port: int | None = None
+
+
+@dataclass
 class Config:
     """Complete system configuration"""
     llm: LLMConfig = field(default_factory=LLMConfig)
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
     pricing: dict[str, dict[str, PricingRule]] = field(default_factory=dict)
+    proxy: ProxyConfig = field(default_factory=ProxyConfig)
 
 
 class ConfigManager:
@@ -226,6 +235,22 @@ class ConfigManager:
             config.llm = LLMConfig(
                 default_provider=llm_raw.get('default_provider', 'openai')
             )
+
+        # Parse proxy config
+        if 'proxy' in raw:
+            proxy_raw = raw['proxy']
+            if not isinstance(proxy_raw, dict):
+                raise ConfigError("'proxy' section must be a mapping")
+            port = proxy_raw.get('port')
+            try:
+                port_value = int(port) if port is not None else None
+            except (TypeError, ValueError):
+                raise ConfigError("'proxy.port' must be an integer")
+            config.proxy = ProxyConfig(
+                enable=bool(proxy_raw.get('enable', False)),
+                host=proxy_raw.get('host'),
+                port=port_value,
+            )
         
         # Parse providers (skip those without valid API keys)
         if 'providers' in raw:
@@ -336,6 +361,16 @@ class ConfigManager:
     def get_default_provider(self) -> str:
         """Get the default provider name."""
         return self.config.llm.default_provider
+
+    def get_proxy_url(self) -> str | None:
+        """Get proxy URL if proxy is enabled, otherwise None."""
+        proxy = self.config.proxy
+        if not proxy.enable or not proxy.host:
+            return None
+        host = proxy.host.rstrip("/")
+        if proxy.port:
+            return f"{host}:{proxy.port}"
+        return host
     
     def get_available_providers(self) -> list[str]:
         """
