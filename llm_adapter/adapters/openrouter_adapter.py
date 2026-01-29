@@ -82,7 +82,7 @@ class OpenRouterAdapter(ProviderAdapter):
         client_kwargs = {"timeout": 120.0}
         proxy_url = self.config.get("proxy_url")
         if proxy_url:
-            client_kwargs["proxies"] = proxy_url
+            client_kwargs["proxy"] = proxy_url
         async with httpx.AsyncClient(**client_kwargs) as client:
             try:
                 response = await client.post(url, headers=headers, json=payload)
