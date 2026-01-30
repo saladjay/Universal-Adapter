@@ -114,6 +114,6 @@ profile:
 
 
 proxy:
-  enable: true
+  enable: false
   host: http://proxy.zhizitech.org
   port: 10803
