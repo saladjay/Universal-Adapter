@@ -130,6 +130,11 @@ class ConfigManager:
         
         return self._parse_config(raw_config)
 
+    def load_env_file(self, config_path: str | Path | None = None) -> None:
+        """Load .env file into environment variables if present."""
+        path = Path(config_path) if config_path else self._config_path
+        self._load_env_file_if_present(path)
+
     def _load_env_file_if_present(self, config_path: Path) -> None:
         search_root = config_path if config_path.is_dir() else config_path.parent
         env_path: Path | None = None
