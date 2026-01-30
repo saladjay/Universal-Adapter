@@ -21,6 +21,8 @@ from pathlib import Path
 
 import httpx
 
+from llm_adapter import ConfigManager
+
 PROMPT = """You are a chat screenshot structure parser.
 
 Output strict JSON with:
@@ -71,6 +73,7 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
+    ConfigManager().load_env_file()
     api_key = args.api_key or os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise SystemExit("Missing OPENROUTER_API_KEY environment variable.")
