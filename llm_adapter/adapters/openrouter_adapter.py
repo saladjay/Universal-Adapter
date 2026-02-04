@@ -49,14 +49,27 @@ class OpenRouterAdapter(ProviderAdapter):
         self.base_url = base_url or self.DEFAULT_BASE_URL
         self.site_url = site_url
         self.site_name = site_name
-        self._client = httpx.AsyncClient(
-            timeout=120.0,
-            proxies=self.config.get("proxy_url"),
-            limits=httpx.Limits(
+        
+        # Build client kwargs with proxy support for different httpx versions
+        client_kwargs = {
+            "timeout": 120.0,
+            "limits": httpx.Limits(
                 max_connections=100,
                 max_keepalive_connections=20,
             ),
-        )
+        }
+        
+        # Handle proxy configuration for different httpx versions
+        proxy_url = self.config.get("proxy_url")
+        if proxy_url:
+            try:
+                # Try newer httpx versions (0.24+) that use 'proxy' parameter
+                self._client = httpx.AsyncClient(proxy=proxy_url, **client_kwargs)
+            except TypeError:
+                # Fall back to older httpx versions that use 'proxies' parameter
+                self._client = httpx.AsyncClient(proxies=proxy_url, **client_kwargs)
+        else:
+            self._client = httpx.AsyncClient(**client_kwargs)
     
     async def generate(self, prompt: str, model: str) -> RawLLMResult:
         """
