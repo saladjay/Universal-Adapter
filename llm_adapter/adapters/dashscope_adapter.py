@@ -2,6 +2,8 @@
 阿里百炼(DashScope) provider adapter implementation.
 """
 
+import json
+
 import httpx
 
 from ..models import TokenUsage
@@ -30,6 +32,14 @@ class DashScopeAdapter(ProviderAdapter):
         """
         super().__init__(api_key, **kwargs)
         self.base_url = base_url or self.DEFAULT_BASE_URL
+        self._client = httpx.AsyncClient(
+            timeout=60.0,
+            proxies=self.config.get("proxy_url"),
+            limits=httpx.Limits(
+                max_connections=100,
+                max_keepalive_connections=20,
+            ),
+        )
     
     async def generate(self, prompt: str, model: str) -> RawLLMResult:
         """
@@ -48,7 +58,7 @@ class DashScopeAdapter(ProviderAdapter):
         url = f"{self.base_url}/services/aigc/text-generation/generation"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         payload = {
             "model": model,
@@ -56,29 +66,24 @@ class DashScopeAdapter(ProviderAdapter):
                 "messages": [{"role": "user", "content": prompt}]
             },
             "parameters": {
-                "result_format": "message"
-            }
+                "result_format": "message",
+            },
         }
         
-        client_kwargs = {"timeout": 60.0}
-        proxy_url = self.config.get("proxy_url")
-        if proxy_url:
-            client_kwargs["proxy"] = proxy_url
-        async with httpx.AsyncClient(**client_kwargs) as client:
-            try:
-                response = await client.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-                data = response.json()
-            except httpx.TimeoutException:
-                raise ProviderError(self.name, "Request timed out")
-            except httpx.HTTPStatusError as e:
-                raise ProviderError(
-                    self.name,
-                    f"API error: {e.response.text}",
-                    status_code=e.response.status_code
-                )
-            except Exception as e:
-                raise ProviderError(self.name, f"Request failed: {str(e)}")
+        try:
+            response = await self._client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.TimeoutException:
+            raise ProviderError(self.name, "Request timed out")
+        except httpx.HTTPStatusError as e:
+            raise ProviderError(
+                self.name,
+                f"API error: {e.response.text}",
+                status_code=e.response.status_code
+            )
+        except Exception as e:
+            raise ProviderError(self.name, f"Request failed: {str(e)}")
         
         # Check for API-level errors
         if "code" in data and data["code"] != "":
@@ -105,6 +110,51 @@ class DashScopeAdapter(ProviderAdapter):
             output_tokens=output_tokens,
             raw_response=data
         )
+
+    async def stream(self, prompt: str, model: str):
+        """Stream response text from DashScope."""
+        url = f"{self.base_url}/services/aigc/text-generation/generation"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        payload = {
+            "model": model,
+            "input": {
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            "parameters": {
+                "result_format": "message",
+                "incremental_output": True,
+            },
+        }
+
+        async with self._client.stream("POST", url, headers=headers, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                if line.startswith("data:"):
+                    data = line[5:].strip()
+                else:
+                    data = line.strip()
+                if not data or data == "[DONE]":
+                    continue
+                try:
+                    payload = json.loads(data)
+                    output = payload.get("output", {})
+                    choices = output.get("choices", [])
+                    if not choices:
+                        continue
+                    text = choices[0].get("message", {}).get("content")
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+                if text:
+                    yield text
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
     
     def estimate_tokens(self, prompt: str, output: str) -> TokenUsage:
         """

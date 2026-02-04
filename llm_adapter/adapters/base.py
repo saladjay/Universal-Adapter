@@ -4,6 +4,7 @@ Abstract base class for LLM provider adapters.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import AsyncIterator
 
 from ..models import TokenUsage
 
@@ -55,6 +56,20 @@ class ProviderAdapter(ABC):
             ProviderError: If the API call fails
         """
         pass
+
+    async def stream(self, prompt: str, model: str) -> AsyncIterator[str]:
+        """
+        Stream response text from the LLM.
+
+        Default implementation falls back to generate() and yields a single chunk.
+        Adapters can override for true streaming support.
+        """
+        result = await self.generate(prompt, model)
+        yield result.text
+
+    async def aclose(self) -> None:
+        """Optional async cleanup hook for adapters."""
+        return None
     
     @abstractmethod
     def estimate_tokens(self, prompt: str, output: str) -> TokenUsage:

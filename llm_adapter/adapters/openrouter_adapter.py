@@ -5,6 +5,8 @@ OpenRouter is a unified API that provides access to multiple LLM providers
 including OpenAI, Anthropic, Google, Meta, and many others.
 """
 
+import json
+
 import httpx
 
 from ..models import TokenUsage
@@ -47,6 +49,14 @@ class OpenRouterAdapter(ProviderAdapter):
         self.base_url = base_url or self.DEFAULT_BASE_URL
         self.site_url = site_url
         self.site_name = site_name
+        self._client = httpx.AsyncClient(
+            timeout=120.0,
+            proxies=self.config.get("proxy_url"),
+            limits=httpx.Limits(
+                max_connections=100,
+                max_keepalive_connections=20,
+            ),
+        )
     
     async def generate(self, prompt: str, model: str) -> RawLLMResult:
         """
@@ -76,34 +86,29 @@ class OpenRouterAdapter(ProviderAdapter):
         
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}]
+            "messages": [{"role": "user", "content": prompt}],
         }
         
-        client_kwargs = {"timeout": 120.0}
-        proxy_url = self.config.get("proxy_url")
-        if proxy_url:
-            client_kwargs["proxy"] = proxy_url
-        async with httpx.AsyncClient(**client_kwargs) as client:
+        try:
+            response = await self._client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.TimeoutException:
+            raise ProviderError(self.name, "Request timed out")
+        except httpx.HTTPStatusError as e:
+            error_detail = ""
             try:
-                response = await client.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-                data = response.json()
-            except httpx.TimeoutException:
-                raise ProviderError(self.name, "Request timed out")
-            except httpx.HTTPStatusError as e:
-                error_detail = ""
-                try:
-                    error_data = e.response.json()
-                    error_detail = error_data.get("error", {}).get("message", e.response.text)
-                except Exception:
-                    error_detail = e.response.text
-                raise ProviderError(
-                    self.name,
-                    f"API error: {error_detail}",
-                    status_code=e.response.status_code
-                )
-            except Exception as e:
-                raise ProviderError(self.name, f"Request failed: {str(e)}")
+                error_data = e.response.json()
+                error_detail = error_data.get("error", {}).get("message", e.response.text)
+            except Exception:
+                error_detail = e.response.text
+            raise ProviderError(
+                self.name,
+                f"API error: {error_detail}",
+                status_code=e.response.status_code
+            )
+        except Exception as e:
+            raise ProviderError(self.name, f"Request failed: {str(e)}")
         
         # Check for API-level errors
         if "error" in data:
@@ -129,6 +134,45 @@ class OpenRouterAdapter(ProviderAdapter):
             output_tokens=output_tokens,
             raw_response=data
         )
+
+    async def stream(self, prompt: str, model: str):
+        """Stream response text using OpenRouter's OpenAI-compatible API."""
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        if self.site_url:
+            headers["HTTP-Referer"] = self.site_url
+        if self.site_name:
+            headers["X-Title"] = self.site_name
+
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+        }
+
+        async with self._client.stream("POST", url, headers=headers, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    payload = json.loads(data)
+                    delta = payload["choices"][0].get("delta", {})
+                    content = delta.get("content")
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+                if content:
+                    yield content
+
+    async def aclose(self) -> None:
+        if not self._client.is_closed:
+            await self._client.aclose()
     
     def estimate_tokens(self, prompt: str, output: str) -> TokenUsage:
         """
