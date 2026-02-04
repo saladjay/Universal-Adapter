@@ -2,6 +2,8 @@
 OpenAI provider adapter implementation.
 """
 
+import json
+
 import httpx
 
 from ..models import TokenUsage
@@ -30,6 +32,14 @@ class OpenAIAdapter(ProviderAdapter):
         """
         super().__init__(api_key, **kwargs)
         self.base_url = base_url or self.DEFAULT_BASE_URL
+        self._client = httpx.AsyncClient(
+            timeout=60.0,
+            proxies=self.config.get("proxy_url"),
+            limits=httpx.Limits(
+                max_connections=100,
+                max_keepalive_connections=20,
+            ),
+        )
     
     async def generate(self, prompt: str, model: str) -> RawLLMResult:
         """
@@ -48,32 +58,27 @@ class OpenAIAdapter(ProviderAdapter):
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}]
+            "messages": [{"role": "user", "content": prompt}],
         }
         
-        client_kwargs = {"timeout": 60.0}
-        proxy_url = self.config.get("proxy_url")
-        if proxy_url:
-            client_kwargs["proxy"] = proxy_url
-        async with httpx.AsyncClient(**client_kwargs) as client:
-            try:
-                response = await client.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-                data = response.json()
-            except httpx.TimeoutException:
-                raise ProviderError(self.name, "Request timed out")
-            except httpx.HTTPStatusError as e:
-                raise ProviderError(
-                    self.name,
-                    f"API error: {e.response.text}",
-                    status_code=e.response.status_code
-                )
-            except Exception as e:
-                raise ProviderError(self.name, f"Request failed: {str(e)}")
+        try:
+            response = await self._client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.TimeoutException:
+            raise ProviderError(self.name, "Request timed out")
+        except httpx.HTTPStatusError as e:
+            raise ProviderError(
+                self.name,
+                f"API error: {e.response.text}",
+                status_code=e.response.status_code
+            )
+        except Exception as e:
+            raise ProviderError(self.name, f"Request failed: {str(e)}")
         
         # Extract response text
         try:
@@ -92,6 +97,39 @@ class OpenAIAdapter(ProviderAdapter):
             output_tokens=output_tokens,
             raw_response=data
         )
+
+    async def stream(self, prompt: str, model: str):
+        """Stream response text using OpenAI-compatible streaming."""
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+        }
+
+        async with self._client.stream("POST", url, headers=headers, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    payload = json.loads(data)
+                    delta = payload["choices"][0].get("delta", {})
+                    content = delta.get("content")
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+                if content:
+                    yield content
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
     
     def estimate_tokens(self, prompt: str, output: str) -> TokenUsage:
         """

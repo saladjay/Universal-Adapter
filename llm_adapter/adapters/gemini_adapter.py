@@ -3,7 +3,10 @@ Google Gemini provider adapter implementation.
 Supports both HTTP API and official SDK modes.
 """
 
+import json
+
 from typing import Literal
+
 import httpx
 
 from ..models import TokenUsage
@@ -46,6 +49,16 @@ class GeminiAdapter(ProviderAdapter):
         super().__init__(api_key, **kwargs)
         self.mode = mode
         self._sdk_client = None
+        self._client: httpx.AsyncClient | None = None
+        if mode == "http":
+            self._client = httpx.AsyncClient(
+                timeout=60.0,
+                proxies=self.config.get("proxy_url"),
+                limits=httpx.Limits(
+                    max_connections=100,
+                    max_keepalive_connections=20,
+                ),
+            )
         
         if mode == "sdk":
             self._init_sdk()
@@ -77,34 +90,40 @@ class GeminiAdapter(ProviderAdapter):
         if self.mode == "sdk":
             return await self._generate_sdk(prompt, model)
         return await self._generate_http(prompt, model)
+
+    async def stream(self, prompt: str, model: str):
+        """Stream response text from Gemini."""
+        if self.mode == "sdk":
+            async for chunk in self._stream_sdk(prompt, model):
+                yield chunk
+            return
+        async for chunk in self._stream_http(prompt, model):
+            yield chunk
     
     async def _generate_http(self, prompt: str, model: str) -> RawLLMResult:
         """Generate using direct HTTP API calls."""
         url = f"{self.BASE_URL}/models/{model}:generateContent"
         params = {"key": self.api_key}
         payload = {
-            "contents": [{"parts": [{"text": prompt}]}]
+            "contents": [{"parts": [{"text": prompt}]}],
         }
         
-        client_kwargs = {"timeout": 60.0}
-        proxy_url = self.config.get("proxy_url")
-        if proxy_url:
-            client_kwargs["proxy"] = proxy_url
-        async with httpx.AsyncClient(**client_kwargs) as client:
-            try:
-                response = await client.post(url, params=params, json=payload)
-                response.raise_for_status()
-                data = response.json()
-            except httpx.TimeoutException:
-                raise ProviderError(self.name, "Request timed out")
-            except httpx.HTTPStatusError as e:
-                raise ProviderError(
-                    self.name,
-                    f"API error: {e.response.text}",
-                    status_code=e.response.status_code
-                )
-            except Exception as e:
-                raise ProviderError(self.name, f"Request failed: {str(e)}")
+        if not self._client:
+            raise ProviderError(self.name, "HTTP client not initialized")
+        try:
+            response = await self._client.post(url, params=params, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.TimeoutException:
+            raise ProviderError(self.name, "Request timed out")
+        except httpx.HTTPStatusError as e:
+            raise ProviderError(
+                self.name,
+                f"API error: {e.response.text}",
+                status_code=e.response.status_code
+            )
+        except Exception as e:
+            raise ProviderError(self.name, f"Request failed: {str(e)}")
         
         # Extract response text
         try:
@@ -123,6 +142,38 @@ class GeminiAdapter(ProviderAdapter):
             output_tokens=output_tokens,
             raw_response=data
         )
+
+    async def _stream_http(self, prompt: str, model: str):
+        url = f"{self.BASE_URL}/models/{model}:streamGenerateContent"
+        params = {"key": self.api_key}
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        headers = {"Accept": "text/event-stream"}
+
+        if not self._client:
+            raise ProviderError(self.name, "HTTP client not initialized")
+        async with self._client.stream(
+            "POST",
+            url,
+            params=params,
+            headers=headers,
+            json=payload,
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    payload = json.loads(data)
+                    text = payload["candidates"][0]["content"]["parts"][0].get("text")
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                    continue
+                if text:
+                    yield text
     
     async def _generate_sdk(self, prompt: str, model: str) -> RawLLMResult:
         """Generate using official google-generativeai SDK."""
@@ -161,6 +212,27 @@ class GeminiAdapter(ProviderAdapter):
             if "not found" in error_msg.lower() or "404" in error_msg:
                 raise ProviderError(self.name, f"Model not found: {error_msg}", status_code=404)
             raise ProviderError(self.name, f"SDK error: {error_msg}")
+
+    async def _stream_sdk(self, prompt: str, model: str):
+        import asyncio
+
+        if not self._genai:
+            self._init_sdk()
+
+        def _sync_stream():
+            gen_model = self._genai.GenerativeModel(model)
+            return gen_model.generate_content(prompt, stream=True)
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, _sync_stream)
+        for chunk in response:
+            text = getattr(chunk, "text", None)
+            if text:
+                yield text
+
+    async def aclose(self) -> None:
+        if self._client:
+            await self._client.aclose()
     
     def estimate_tokens(self, prompt: str, output: str) -> TokenUsage:
         """

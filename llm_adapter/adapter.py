@@ -6,7 +6,9 @@ a single API for LLM calls with automatic routing, cost calculation,
 and usage logging.
 """
 
-from typing import Literal
+import atexit
+import asyncio
+from typing import AsyncIterator, Literal
 
 from .adapters import (
     ProviderAdapter,
@@ -81,6 +83,7 @@ class LLMAdapter:
         self._router = Router(self._config_manager)
         self._billing = BillingEngine(self._config_manager)
         self._logger = UsageLogger()
+        atexit.register(self._close_on_exit)
         self._adapters: dict[str, ProviderAdapter] = {}
 
     @property
@@ -199,6 +202,48 @@ class LLMAdapter:
             raise ValidationError(errors)
         
         return await self._generate_with_fallback(request)
+
+    async def stream(
+        self,
+        user_id: str,
+        prompt: str,
+        scene: Literal["chat", "coach", "persona", "system"],
+        quality: Literal["low", "medium", "high"],
+    ) -> AsyncIterator[str]:
+        """
+        Stream response text from an LLM.
+
+        Args:
+            user_id: User identifier for logging and billing
+            prompt: The input prompt to send to the LLM
+            scene: Usage scene (chat, coach, persona, system)
+            quality: Quality level (low, medium, high)
+
+        Yields:
+            Response text chunks
+        """
+        request = LLMRequest(
+            user_id=user_id,
+            prompt=prompt,
+            scene=scene,
+            quality=quality,
+        )
+
+        errors = self.validate_request(request)
+        if errors:
+            raise ValidationError(errors)
+
+        async for chunk in self._stream_with_fallback(request):
+            yield chunk
+
+    async def stream_from_request(self, request: LLMRequest) -> AsyncIterator[str]:
+        """Stream response text from an LLMRequest object."""
+        errors = self.validate_request(request)
+        if errors:
+            raise ValidationError(errors)
+
+        async for chunk in self._stream_with_fallback(request):
+            yield chunk
 
     async def generate_from_request(self, request: LLMRequest) -> LLMResponse:
         """
@@ -322,6 +367,126 @@ class LLMAdapter:
                 break
         
         # All attempts failed
+        error_msg = f"All providers failed for quality '{request.quality}'"
+        if last_error:
+            error_msg += f". Last error: {last_error}"
+        raise LLMAdapterError(error_msg)
+
+    async def aclose(self) -> None:
+        """Close all provider adapters."""
+        for adapter in self._adapters.values():
+            await adapter.aclose()
+
+    def close(self) -> None:
+        """Synchronously close adapters (for application shutdown)."""
+        if not self._adapters:
+            return
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.run(self.aclose())
+            return
+        if loop.is_running():
+            loop.create_task(self.aclose())
+        else:
+            loop.run_until_complete(self.aclose())
+
+    def _close_on_exit(self) -> None:
+        """atexit hook to close adapters when the process exits."""
+        try:
+            self.close()
+        except Exception:
+            pass
+
+    async def _stream_with_fallback(self, request: LLMRequest) -> AsyncIterator[str]:
+        """Stream response with fallback; logs usage after completion."""
+        failed_providers: set[str] = set()
+        last_error: Exception | None = None
+        last_failed_provider: str | None = None
+
+        for attempt in range(self.MAX_RETRIES):
+            streamed_any = False
+            chunks: list[str] = []
+            try:
+                if attempt == 0:
+                    route = self._router.route(request.quality)
+                else:
+                    if last_failed_provider is None:
+                        raise RouterError(
+                            f"No fallback available for quality '{request.quality}' "
+                            "because no failed provider was recorded"
+                        )
+                    route = self._router.get_fallback(
+                        request.quality,
+                        failed_provider=last_failed_provider,
+                    )
+
+                provider = route.provider
+                model = route.model
+
+                if provider in failed_providers:
+                    continue
+
+                adapter = self._get_adapter(provider)
+                async for chunk in adapter.stream(request.prompt, model):
+                    streamed_any = True
+                    chunks.append(chunk)
+                    yield chunk
+
+                full_text = "".join(chunks)
+                if full_text == "":
+                    raise ProviderError(provider, "Empty response from stream")
+
+                if chunks and adapter:
+                    token_usage = adapter.estimate_tokens(request.prompt, full_text)
+                    input_tokens = token_usage.input_tokens
+                    output_tokens = token_usage.output_tokens
+                else:
+                    input_tokens = 0
+                    output_tokens = 0
+
+                try:
+                    cost_usd = self._billing.calculate_cost(
+                        provider=provider,
+                        model=model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                    )
+                except BillingError:
+                    cost_usd = 0.0
+
+                self._logger.log(
+                    user_id=request.user_id,
+                    provider=provider,
+                    model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cost=cost_usd,
+                )
+
+                return
+
+            except ProviderError as e:
+                if streamed_any:
+                    raise LLMAdapterError(
+                        f"Streaming interrupted after partial output from '{e.provider}': {e}"
+                    ) from e
+                failed_providers.add(e.provider)
+                last_failed_provider = e.provider
+                last_error = e
+                continue
+            except RouterError as e:
+                if last_error is not None:
+                    last_error = RouterError(f"{e}. Previous provider error: {last_error}")
+                else:
+                    last_error = e
+                break
+            except Exception as e:
+                if streamed_any:
+                    raise
+                last_error = e
+                break
+
         error_msg = f"All providers failed for quality '{request.quality}'"
         if last_error:
             error_msg += f". Last error: {last_error}"

@@ -94,6 +94,21 @@ print(response.input_tokens, response.output_tokens)
 print(response.cost_usd)
 ```
 
+### 1.1) 流式输出（Streaming）
+
+```python
+from llm_adapter import LLMAdapter
+
+adapter = LLMAdapter(config_path="config.yaml")
+async for chunk in adapter.stream(
+    user_id="user_001",
+    prompt="Tell me a story.",
+    scene="chat",
+    quality="medium",
+):
+    print(chunk, end="", flush=True)
+```
+
 ### 2) 路由与计费说明
 
 - 路由基于质量等级选择 provider + model
