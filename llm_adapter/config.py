@@ -569,7 +569,7 @@ class ConfigManager:
         self, 
         provider: str, 
         model: str,
-        override_params: GenerationParams | None = Nonez
+        override_params: GenerationParams | None = None
     ) -> GenerationParams:
         """
         Get merged generation parameters with proper precedence.
