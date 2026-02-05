@@ -35,6 +35,9 @@ from .router import Router, RouteResult, RouterError
 # Usage logger
 from .logger import UsageLogger
 
+# Fallback tracker
+from .fallback_tracker import FallbackTracker, FallbackEvent, FallbackStats, get_fallback_tracker
+
 # Main adapter (unified entry point)
 from .adapter import LLMAdapter, LLMAdapterError, ValidationError
 
@@ -74,6 +77,11 @@ __all__ = [
     "RouterError",
     # Logger
     "UsageLogger",
+    # Fallback tracker
+    "FallbackTracker",
+    "FallbackEvent",
+    "FallbackStats",
+    "get_fallback_tracker",
     # Provider adapters
     "ProviderAdapter",
     "ProviderError",
