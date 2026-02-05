@@ -34,8 +34,10 @@ providers:
 
   gemini:
     api_key: REDACTED_GOOGLE_API_KEY
-    mode: http  # Options: "http" (default), "sdk", "vertex"
-    # HTTP mode uses standard REST API which works better with proxies
+    mode: vertex  # Use Vertex AI for paid tier with higher quotas
+    # Vertex AI specific settings
+    project_id: wingy-e87ee
+    location: asia-southeast1
     models:
       cheap: gemini-2.0-flash-lite
       normal: gemini-2.0-flash-lite
