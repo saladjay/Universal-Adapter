@@ -71,6 +71,9 @@ class ProviderConfig:
     default_model: str | None = None
     generation_params: GenerationParams = field(default_factory=GenerationParams)
     model_params: dict[str, GenerationParams] = field(default_factory=dict)
+    mode: str | None = None  # For Gemini: "http", "sdk", "vertex"
+    project_id: str | None = None  # For Vertex AI
+    location: str | None = None  # For Vertex AI
 
 
 @dataclass
@@ -407,6 +410,9 @@ class ConfigManager:
                     default_model=provider_data.get('default_model'),
                     generation_params=provider_gen_params,
                     model_params=model_params
+                    mode=provider_data.get('mode'),
+                    project_id=provider_data.get('project_id'),
+                    location=provider_data.get('location'),
                 )
         
         # Parse pricing rules
