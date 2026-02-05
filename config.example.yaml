@@ -1,0 +1,119 @@
+# LLM Adapter Configuration Example
+# Copy this file to config.yaml and customize as needed
+# Environment variables can be referenced using ${VAR_NAME} syntax
+
+llm:
+  default_provider: openrouter
+
+providers:
+  openai:
+    api_key: your-openai-api-key
+    base_url: https://api.openai.com
+    models:
+      cheap: gpt-4o-mini
+      normal: gpt-4o
+      premium: gpt-4-turbo
+      multimodal: gpt-4o
+
+  # Gemini with HTTP mode (default, fewer dependencies)
+  gemini:
+    api_key: your-gemini-api-key
+    mode: http  # Options: "http" (default), "sdk", "vertex"
+    models:
+      cheap: gemini-2.5-flash
+      normal: gemini-2.5-flash
+      premium: gemini-2.5-flash
+      multimodal: gemini-2.5-flash
+
+  # Gemini with SDK mode (official google-generativeai SDK)
+  # Requires: pip install google-generativeai
+  # gemini:
+  #   api_key: your-gemini-api-key
+  #   mode: sdk
+  #   models:
+  #     cheap: gemini-2.5-flash
+  #     normal: gemini-2.5-flash
+  #     premium: gemini-2.5-flash
+  #     multimodal: gemini-2.5-flash
+
+  # Gemini with Vertex AI mode (for GCP projects)
+  # Requires: pip install google-cloud-aiplatform
+  # Environment variable required: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+  # gemini:
+  #   api_key: ""  # Not used in vertex mode
+  #   mode: vertex
+  #   project_id: your-gcp-project-id
+  #   location: asia-southeast1  # GCP region
+  #   models:
+  #     cheap: gemini-2.0-flash
+  #     normal: gemini-2.5-flash
+  #     premium: gemini-3-flash-preview
+  #     multimodal: gemini-2.5-flash
+
+  dashscope:
+    api_key: your-dashscope-api-key
+    base_url: https://dashscope.aliyuncs.com/api/v1
+    models:
+      cheap: qwen-flash
+      normal: qwen-flash
+      premium: qwen-flash
+      multimodal: qwen-vl-plus
+
+  openrouter:
+    api_key: ${OPENROUTER_API_KEY}
+    base_url: ${OPENROUTER_BASE_URL}
+    models:
+      cheap: google/gemini-2.0-flash-001
+      normal: google/gemini-2.5-flash
+      premium: google/gemini-3-flash-preview
+      multimodal: qwen/qwen3-vl-30b-a3b-instruct
+
+pricing:
+  openai:
+    gpt-4o-mini:
+      input_cost_per_1m: 0.15
+      output_cost_per_1m: 0.60
+    gpt-4o:
+      input_cost_per_1m: 2.50
+      output_cost_per_1m: 10.00
+    gpt-4-turbo:
+      input_cost_per_1m: 10.00
+      output_cost_per_1m: 30.00
+
+  gemini:
+    gemini-1.5-flash:
+      input_cost_per_1m: 0.075
+      output_cost_per_1m: 0.30
+    gemini-1.5-pro:
+      input_cost_per_1m: 1.25
+      output_cost_per_1m: 5.00
+    gemini-2.0-flash:
+      input_cost_per_1m: 0.075
+      output_cost_per_1m: 0.30
+    gemini-2.5-flash:
+      input_cost_per_1m: 0.075
+      output_cost_per_1m: 0.30
+
+  dashscope:
+    qwen-turbo:
+      input_cost_per_1m: 0.30
+      output_cost_per_1m: 0.60
+    qwen-plus:
+      input_cost_per_1m: 0.80
+      output_cost_per_1m: 2.00
+    qwen-max:
+      input_cost_per_1m: 2.00
+      output_cost_per_1m: 6.00
+
+  openrouter:
+    meta-llama/llama-3.1-8b-instruct:
+      input_cost_per_1m: 0.055
+      output_cost_per_1m: 0.055
+    anthropic/claude-3.5-sonnet:
+      input_cost_per_1m: 3.00
+      output_cost_per_1m: 15.00
+
+proxy:
+  enable: false
+  host: http://proxy.example.com
+  port: 10803
