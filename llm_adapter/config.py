@@ -36,6 +36,9 @@ class ProviderConfig:
     base_url: str | None = None
     account_id: str | None = None
     default_model: str | None = None
+    mode: str | None = None  # For Gemini: "http", "sdk", "vertex"
+    project_id: str | None = None  # For Vertex AI
+    location: str | None = None  # For Vertex AI
 
 
 @dataclass
@@ -299,7 +302,10 @@ class ConfigManager:
                     models=models,
                     base_url=provider_data.get('base_url'),
                     account_id=provider_data.get('account_id'),
-                    default_model=provider_data.get('default_model')
+                    default_model=provider_data.get('default_model'),
+                    mode=provider_data.get('mode'),
+                    project_id=provider_data.get('project_id'),
+                    location=provider_data.get('location'),
                 )
         
         # Parse pricing rules

@@ -138,6 +138,16 @@ class LLMAdapter:
             kwargs["base_url"] = provider_config.base_url
         if provider_config.account_id:
             kwargs["account_id"] = provider_config.account_id
+        
+        # Add Gemini-specific parameters
+        if provider == "gemini":
+            if provider_config.mode:
+                kwargs["mode"] = provider_config.mode
+            if provider_config.project_id:
+                kwargs["project_id"] = provider_config.project_id
+            if provider_config.location:
+                kwargs["location"] = provider_config.location
+        
         proxy_url = self._config_manager.get_proxy_url()
         if proxy_url:
             kwargs["proxy_url"] = proxy_url
