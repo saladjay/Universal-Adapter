@@ -33,12 +33,18 @@ class DashScopeAdapter(ProviderAdapter):
         super().__init__(api_key, **kwargs)
         self.base_url = base_url or self.DEFAULT_BASE_URL
         
+        # Get HTTP client config from config manager
+        http_config = self.config.get("http_client", {})
+        max_connections = http_config.get("max_connections", 100)
+        max_keepalive = http_config.get("max_keepalive_connections", 20)
+        timeout = http_config.get("timeout", 60.0)
+        
         # Build client kwargs with proxy support for different httpx versions
         client_kwargs = {
-            "timeout": 60.0,
+            "timeout": timeout,
             "limits": httpx.Limits(
-                max_connections=100,
-                max_keepalive_connections=20,
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive,
             ),
         }
         
