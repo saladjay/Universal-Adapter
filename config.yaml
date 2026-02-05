@@ -34,16 +34,13 @@ providers:
 
   gemini:
     api_key: REDACTED_GOOGLE_API_KEY
-    mode: vertex  # Options: "http" (default), "sdk", "vertex"
-    # Vertex AI specific settings (only needed when mode: vertex)
-    ## project_id 在 json密钥里
-    project_id: wingy-e87ee
-    location: asia-southeast1
+    mode: http  # Options: "http" (default), "sdk", "vertex"
+    # HTTP mode uses standard REST API which works better with proxies
     models:
-      cheap: gemini-2.5-flash
-      normal: gemini-2.5-flash
-      premium: gemini-2.5-flash
-      multimodal: gemini-2.5-flash
+      cheap: gemini-2.0-flash-lite
+      normal: gemini-2.0-flash-lite
+      premium: gemini-2.0-flash
+      multimodal: gemini-2.0-flash
     # Gemini-specific generation params
     generation_params:
       temperature: 0.7
@@ -156,7 +153,7 @@ profile:
 
 
 proxy:
-  enable: false
+  enable: true
   host: http://${PROXY_HOST}
   port: ${PROXY_PORT}
 

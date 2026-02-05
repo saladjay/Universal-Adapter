@@ -84,6 +84,7 @@ Uses Vertex AI SDK for GCP projects with regional deployment.
 - GCP integration
 - Enterprise features
 - Better quota management
+- **Automatic region fallback** (new!)
 
 **Cons:**
 - Requires GCP project setup
@@ -114,6 +115,8 @@ providers:
     mode: vertex
     project_id: your-gcp-project-id
     location: asia-southeast1  # GCP region
+    enable_region_fallback: true  # Enable automatic fallback (default)
+    fallback_location: us-central1  # Fallback region (default)
     models:
       cheap: gemini-2.0-flash
       normal: gemini-2.5-flash
@@ -129,10 +132,24 @@ adapter = GeminiAdapter(
     api_key="",  # Not used
     mode="vertex",
     project_id="your-gcp-project-id",
-    location="asia-southeast1"
+    location="asia-southeast1",
+    enable_region_fallback=True,  # Enable automatic fallback
+    fallback_location="us-central1"  # Fallback region
 )
 result = await adapter.generate("你好", "gemini-2.0-flash")
 ```
+
+### Region Fallback (Vertex AI Only)
+
+Vertex AI mode supports automatic region fallback. If a model is unavailable in the specified region, it automatically falls back to a global region (default: `us-central1`).
+
+**Features:**
+- Automatic retry with fallback region
+- Fallback timing tracking
+- Success rate monitoring
+- Configurable fallback behavior
+
+**See:** `docs/gemini_region_fallback.md` for detailed documentation and `examples/gemini_region_fallback_example.py` for usage examples.
 
 **Environment Variables Required:**
 - `GOOGLE_APPLICATION_CREDENTIALS`: Path to service account JSON key file
@@ -153,6 +170,7 @@ async for chunk in adapter.stream("Count to 5", "gemini-2.5-flash"):
 | Dependencies | None | google-generativeai | google-cloud-aiplatform |
 | Setup Complexity | Low | Low | High |
 | Regional Deployment | No | No | Yes |
+| Region Fallback | No | No | Yes |
 | GCP Integration | No | No | Yes |
 | Streaming | ✅ | ✅ | ✅ |
 | Token Counting | ✅ | ✅ | ✅ |
