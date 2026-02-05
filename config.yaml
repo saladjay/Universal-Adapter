@@ -2,7 +2,7 @@
 # Environment variables can be referenced using ${VAR_NAME} syntax
 
 llm:
-  default_provider: dashscope
+  default_provider: openrouter
   # Global default generation parameters (applied to all providers/models)
   default_generation_params:
     temperature: 0.7
@@ -85,10 +85,10 @@ providers:
     api_key: ${OPENROUTER_API_KEY}
     base_url: ${OPENROUTER_BASE_URL}
     models:
-      cheap: google/gemini-2.0-flash-001
-      normal: google/gemini-2.5-flash
-      premium: google/gemini-3-flash-preview
-      multimodal: qwen/qwen3-vl-30b-a3b-instruct
+      cheap: google/gemini-2.0-flash-lite-001
+      normal: google/gemini-2.0-flash-lite-001
+      premium: google/gemini-2.0-flash-lite-001
+      multimodal: google/gemini-2.0-flash-lite-001
     # OpenRouter-specific params
     generation_params:
       temperature: 0.75
