@@ -50,12 +50,18 @@ class OpenRouterAdapter(ProviderAdapter):
         self.site_url = site_url
         self.site_name = site_name
         
+        # Get HTTP client config from config manager
+        http_config = self.config.get("http_client", {})
+        max_connections = http_config.get("max_connections", 100)
+        max_keepalive = http_config.get("max_keepalive_connections", 20)
+        timeout = http_config.get("timeout", 120.0)
+        
         # Build client kwargs with proxy support for different httpx versions
         client_kwargs = {
-            "timeout": 120.0,
+            "timeout": timeout,
             "limits": httpx.Limits(
-                max_connections=100,
-                max_keepalive_connections=20,
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive,
             ),
         }
         
@@ -71,13 +77,14 @@ class OpenRouterAdapter(ProviderAdapter):
         else:
             self._client = httpx.AsyncClient(**client_kwargs)
     
-    async def generate(self, prompt: str, model: str) -> RawLLMResult:
+    async def generate(self, prompt: str, model: str, **kwargs) -> RawLLMResult:
         """
         Generate a response using OpenRouter API.
         
         Args:
             prompt: The input prompt
             model: Model identifier (e.g., 'openai/gpt-4o', 'anthropic/claude-3-opus')
+            **kwargs: Additional generation parameters (temperature, max_tokens, etc.)
             
         Returns:
             RawLLMResult with generated text and token counts
@@ -97,10 +104,21 @@ class OpenRouterAdapter(ProviderAdapter):
         if self.site_name:
             headers["X-Title"] = self.site_name
         
+        # Build payload with generation parameters
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
         }
+        
+        # Add generation parameters from kwargs
+        # Filter out None values and non-generation params
+        generation_keys = {
+            'temperature', 'top_p', 'top_k', 'max_tokens', 
+            'presence_penalty', 'frequency_penalty', 'stop', 'seed'
+        }
+        for key, value in kwargs.items():
+            if key in generation_keys and value is not None:
+                payload[key] = value
         
         try:
             response = await self._client.post(url, headers=headers, json=payload)

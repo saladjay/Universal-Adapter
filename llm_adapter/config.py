@@ -29,6 +29,39 @@ class ModelConfig:
 
 
 @dataclass
+class GenerationParams:
+    """Generation parameters for LLM output control"""
+    temperature: float | None = None
+    top_p: float | None = None
+    top_k: int | None = None
+    max_tokens: int | None = None
+    presence_penalty: float | None = None
+    frequency_penalty: float | None = None
+    stop: list[str] | None = None
+    seed: int | None = None
+    
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary, excluding None values"""
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+    
+    def merge(self, other: 'GenerationParams | None') -> 'GenerationParams':
+        """Merge with another GenerationParams, other takes precedence"""
+        if other is None:
+            return self
+        
+        return GenerationParams(
+            temperature=other.temperature if other.temperature is not None else self.temperature,
+            top_p=other.top_p if other.top_p is not None else self.top_p,
+            top_k=other.top_k if other.top_k is not None else self.top_k,
+            max_tokens=other.max_tokens if other.max_tokens is not None else self.max_tokens,
+            presence_penalty=other.presence_penalty if other.presence_penalty is not None else self.presence_penalty,
+            frequency_penalty=other.frequency_penalty if other.frequency_penalty is not None else self.frequency_penalty,
+            stop=other.stop if other.stop is not None else self.stop,
+            seed=other.seed if other.seed is not None else self.seed,
+        )
+
+
+@dataclass
 class ProviderConfig:
     """Configuration for a single LLM provider"""
     api_key: str
@@ -36,12 +69,15 @@ class ProviderConfig:
     base_url: str | None = None
     account_id: str | None = None
     default_model: str | None = None
+    generation_params: GenerationParams = field(default_factory=GenerationParams)
+    model_params: dict[str, GenerationParams] = field(default_factory=dict)
 
 
 @dataclass
 class LLMConfig:
     """Top-level LLM configuration"""
     default_provider: str = "openai"
+    default_generation_params: GenerationParams = field(default_factory=GenerationParams)
 
 
 @dataclass
@@ -53,12 +89,21 @@ class ProxyConfig:
 
 
 @dataclass
+class HttpClientConfig:
+    """HTTP client connection pool configuration"""
+    max_connections: int = 100
+    max_keepalive_connections: int = 20
+    timeout: float = 60.0
+
+
+@dataclass
 class Config:
     """Complete system configuration"""
     llm: LLMConfig = field(default_factory=LLMConfig)
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
     pricing: dict[str, dict[str, PricingRule]] = field(default_factory=dict)
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
+    http_client: HttpClientConfig = field(default_factory=HttpClientConfig)
 
 
 class ConfigManager:
@@ -228,6 +273,30 @@ class ConfigManager:
             return [self._substitute_env_vars(item, skip_missing) for item in obj]
         return obj
     
+    def _parse_generation_params(self, params_raw: dict) -> GenerationParams:
+        """
+        Parse generation parameters from raw configuration.
+        
+        Args:
+            params_raw: Raw parameters dictionary
+            
+        Returns:
+            GenerationParams object
+        """
+        if not isinstance(params_raw, dict):
+            return GenerationParams()
+        
+        return GenerationParams(
+            temperature=float(params_raw['temperature']) if 'temperature' in params_raw else None,
+            top_p=float(params_raw['top_p']) if 'top_p' in params_raw else None,
+            top_k=int(params_raw['top_k']) if 'top_k' in params_raw else None,
+            max_tokens=int(params_raw['max_tokens']) if 'max_tokens' in params_raw else None,
+            presence_penalty=float(params_raw['presence_penalty']) if 'presence_penalty' in params_raw else None,
+            frequency_penalty=float(params_raw['frequency_penalty']) if 'frequency_penalty' in params_raw else None,
+            stop=params_raw.get('stop') if 'stop' in params_raw else None,
+            seed=int(params_raw['seed']) if 'seed' in params_raw else None,
+        )
+    
     def _parse_config(self, raw: dict) -> Config:
         """Parse raw configuration dictionary into Config object."""
         config = Config()
@@ -237,8 +306,17 @@ class ConfigManager:
             llm_raw = raw['llm']
             if not isinstance(llm_raw, dict):
                 raise ConfigError("'llm' section must be a mapping")
+            
+            # Parse default generation params
+            default_gen_params = GenerationParams()
+            if 'default_generation_params' in llm_raw:
+                default_gen_params = self._parse_generation_params(
+                    llm_raw['default_generation_params']
+                )
+            
             config.llm = LLMConfig(
-                default_provider=llm_raw.get('default_provider', 'openai')
+                default_provider=llm_raw.get('default_provider', 'openai'),
+                default_generation_params=default_gen_params
             )
 
         # Parse proxy config
@@ -255,6 +333,17 @@ class ConfigManager:
                 enable=bool(proxy_raw.get('enable', False)),
                 host=proxy_raw.get('host'),
                 port=port_value,
+            )
+        
+        # Parse HTTP client config
+        if 'http_client' in raw:
+            http_client_raw = raw['http_client']
+            if not isinstance(http_client_raw, dict):
+                raise ConfigError("'http_client' section must be a mapping")
+            config.http_client = HttpClientConfig(
+                max_connections=int(http_client_raw.get('max_connections', 100)),
+                max_keepalive_connections=int(http_client_raw.get('max_keepalive_connections', 20)),
+                timeout=float(http_client_raw.get('timeout', 60.0)),
             )
         
         # Parse providers (skip those without valid API keys)
@@ -294,12 +383,30 @@ class ConfigManager:
                 else:
                     models = ModelConfig()
                 
+                # Parse provider-level generation params
+                provider_gen_params = GenerationParams()
+                if 'generation_params' in provider_data:
+                    provider_gen_params = self._parse_generation_params(
+                        provider_data['generation_params']
+                    )
+                
+                # Parse model-specific generation params
+                model_params = {}
+                if 'model_params' in provider_data:
+                    model_params_raw = provider_data['model_params']
+                    if isinstance(model_params_raw, dict):
+                        for model_name, params_raw in model_params_raw.items():
+                            if isinstance(params_raw, dict):
+                                model_params[model_name] = self._parse_generation_params(params_raw)
+                
                 config.providers[provider_name] = ProviderConfig(
                     api_key=api_key,
                     models=models,
                     base_url=provider_data.get('base_url'),
                     account_id=provider_data.get('account_id'),
-                    default_model=provider_data.get('default_model')
+                    default_model=provider_data.get('default_model'),
+                    generation_params=provider_gen_params,
+                    model_params=model_params
                 )
         
         # Parse pricing rules
@@ -451,3 +558,44 @@ class ConfigManager:
             return provider_config.default_model
         
         raise ConfigError(f"No model available for provider '{provider}' at quality '{quality}'")
+    
+    def get_generation_params(
+        self, 
+        provider: str, 
+        model: str,
+        override_params: GenerationParams | None = None
+    ) -> GenerationParams:
+        """
+        Get merged generation parameters with proper precedence.
+        
+        Precedence (lowest to highest):
+        1. Global default (llm.default_generation_params)
+        2. Provider-level (providers.{provider}.generation_params)
+        3. Model-specific (providers.{provider}.model_params.{model})
+        4. Runtime override (override_params parameter)
+        
+        Args:
+            provider: Provider name
+            model: Model name
+            override_params: Optional runtime override parameters
+            
+        Returns:
+            Merged GenerationParams with all applicable settings
+        """
+        # Start with global defaults
+        params = self.config.llm.default_generation_params
+        
+        # Merge provider-level params
+        if provider in self.config.providers:
+            provider_config = self.config.providers[provider]
+            params = params.merge(provider_config.generation_params)
+            
+            # Merge model-specific params
+            if model in provider_config.model_params:
+                params = params.merge(provider_config.model_params[model])
+        
+        # Merge runtime overrides
+        if override_params:
+            params = params.merge(override_params)
+        
+        return params

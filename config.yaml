@@ -2,7 +2,12 @@
 # Environment variables can be referenced using ${VAR_NAME} syntax
 
 llm:
-  default_provider: openrouter
+  default_provider: dashscope
+  # Global default generation parameters (applied to all providers/models)
+  default_generation_params:
+    temperature: 0.7
+    max_tokens: 2048
+    top_p: 0.9
 
 providers:
   openai:
@@ -13,6 +18,19 @@ providers:
       normal: gpt-4o
       premium: gpt-4-turbo
       multimodal: gpt-4o
+    # Provider-level generation params (overrides global defaults)
+    generation_params:
+      temperature: 0.8
+      presence_penalty: 0.1
+      frequency_penalty: 0.1
+    # Model-specific params (overrides provider-level)
+    model_params:
+      gpt-4o-mini:
+        temperature: 0.5
+        max_tokens: 1024
+      gpt-4-turbo:
+        temperature: 0.9
+        max_tokens: 4096
 
   gemini:
     api_key: REDACTED_GOOGLE_API_KEY
@@ -21,6 +39,12 @@ providers:
       normal: gemini-2.5-flash
       premium: gemini-2.5-flash
       multimodal: gemini-2.5-flash
+    # Gemini-specific generation params
+    generation_params:
+      temperature: 0.7
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 2048
 
   # cloudflare:
   #   api_key: 
@@ -39,13 +63,18 @@ providers:
       multimodal: meta-llama/Llama-3.1-8B-Instruct
 
   dashscope:
-    api_key: REDACTED_TOKEN
-    base_url: https://dashscope.aliyuncs.com/api/v1
+    api_key: ${DASHSCOPY_API_KEY}
+    base_url: ${DASHSCOPY_BASE_URL}
     models:
       cheap: qwen-flash
       normal: qwen-flash
       premium: qwen-flash
       multimodal: qwen-vl-plus
+    # DashScope-specific params
+    generation_params:
+      temperature: 0.7
+      top_p: 0.8
+      seed: 1234  # For reproducible results
 
   openrouter:
     api_key: ${OPENROUTER_API_KEY}
@@ -55,6 +84,14 @@ providers:
       normal: google/gemini-2.5-flash
       premium: google/gemini-3-flash-preview
       multimodal: qwen/qwen3-vl-30b-a3b-instruct
+    # OpenRouter-specific params
+    generation_params:
+      temperature: 0.75
+      max_tokens: 3000
+    model_params:
+      google/gemini-3-flash-preview:
+        temperature: 0.9
+        max_tokens: 4096
 
 pricing:
   openai:
@@ -117,3 +154,10 @@ proxy:
   enable: false
   host: http://proxy.zhizitech.org
   port: 10803
+
+# HTTP Client Configuration (Optional)
+# Controls connection pool and timeout settings for all adapters
+# http_client:
+#   max_connections: 100              # Maximum concurrent connections (default: 100)
+#   max_keepalive_connections: 20    # Keep-alive connections for reuse (default: 20)
+#   timeout: 60.0                     # Request timeout in seconds (default: 60.0)
