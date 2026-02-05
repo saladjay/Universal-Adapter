@@ -1,4 +1,5 @@
-# LLM Adapter Configuration
+# LLM Adapter Configuration Example
+# Copy this file to config.yaml and customize as needed
 # Environment variables can be referenced using ${VAR_NAME} syntax
 
 llm:
@@ -6,7 +7,7 @@ llm:
 
 providers:
   openai:
-    api_key: 
+    api_key: your-openai-api-key
     base_url: https://api.openai.com
     models:
       cheap: gpt-4o-mini
@@ -14,37 +15,43 @@ providers:
       premium: gpt-4-turbo
       multimodal: gpt-4o
 
+  # Gemini with HTTP mode (default, fewer dependencies)
   gemini:
-    api_key: REDACTED_GOOGLE_API_KEY
-    mode: vertex  # Options: "http" (default), "sdk", "vertex"
-    # Vertex AI specific settings (only needed when mode: vertex)
-    ## project_id 在 json密钥里
-    project_id: wingy-e87ee
-    location: asia-southeast1
+    api_key: your-gemini-api-key
+    mode: http  # Options: "http" (default), "sdk", "vertex"
     models:
       cheap: gemini-2.5-flash
       normal: gemini-2.5-flash
       premium: gemini-2.5-flash
       multimodal: gemini-2.5-flash
 
-  # cloudflare:
-  #   api_key: 
-  #   account_id: ${CF_ACCOUNT_ID}
+  # Gemini with SDK mode (official google-generativeai SDK)
+  # Requires: pip install google-generativeai
+  # gemini:
+  #   api_key: your-gemini-api-key
+  #   mode: sdk
   #   models:
-  #     cheap: "@cf/meta/llama-3-8b-instruct"
-  #     normal: "@cf/meta/llama-3-8b-instruct"
-  #     multimodal: "@cf/meta/llama-3-8b-instruct"
+  #     cheap: gemini-2.5-flash
+  #     normal: gemini-2.5-flash
+  #     premium: gemini-2.5-flash
+  #     multimodal: gemini-2.5-flash
 
-  huggingface:
-    api_key: 
-    default_model: meta-llama/Llama-3.1-8B-Instruct
-    models:
-      cheap: meta-llama/Llama-3.1-8B-Instruct
-      normal: meta-llama/Llama-3.1-8B-Instruct
-      multimodal: meta-llama/Llama-3.1-8B-Instruct
+  # Gemini with Vertex AI mode (for GCP projects)
+  # Requires: pip install google-cloud-aiplatform
+  # Environment variable required: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+  # gemini:
+  #   api_key: ""  # Not used in vertex mode
+  #   mode: vertex
+  #   project_id: your-gcp-project-id
+  #   location: asia-southeast1  # GCP region
+  #   models:
+  #     cheap: gemini-2.0-flash
+  #     normal: gemini-2.5-flash
+  #     premium: gemini-3-flash-preview
+  #     multimodal: gemini-2.5-flash
 
   dashscope:
-    api_key: REDACTED_TOKEN
+    api_key: your-dashscope-api-key
     base_url: https://dashscope.aliyuncs.com/api/v1
     models:
       cheap: qwen-flash
@@ -80,16 +87,12 @@ pricing:
     gemini-1.5-pro:
       input_cost_per_1m: 1.25
       output_cost_per_1m: 5.00
-
-  cloudflare:
-    "@cf/meta/llama-3-8b-instruct":
-      input_cost_per_1m: 0.00
-      output_cost_per_1m: 0.00
-
-  huggingface:
-    meta-llama/Llama-3.1-8B-Instruct:
-      input_cost_per_1m: 0.00
-      output_cost_per_1m: 0.00
+    gemini-2.0-flash:
+      input_cost_per_1m: 0.075
+      output_cost_per_1m: 0.30
+    gemini-2.5-flash:
+      input_cost_per_1m: 0.075
+      output_cost_per_1m: 0.30
 
   dashscope:
     qwen-turbo:
@@ -109,16 +112,8 @@ pricing:
     anthropic/claude-3.5-sonnet:
       input_cost_per_1m: 3.00
       output_cost_per_1m: 15.00
-    anthropic/claude-3-opus:
-      input_cost_per_1m: 15.00
-      output_cost_per_1m: 75.00
-
-profile:
-  trait_rules:
-    min_confidence_to_count: 0.7
-
 
 proxy:
   enable: false
-  host: http://proxy.zhizitech.org
+  host: http://proxy.example.com
   port: 10803
