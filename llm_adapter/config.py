@@ -409,7 +409,7 @@ class ConfigManager:
                     account_id=provider_data.get('account_id'),
                     default_model=provider_data.get('default_model'),
                     generation_params=provider_gen_params,
-                    model_params=model_params
+                    model_params=model_params,
                     mode=provider_data.get('mode'),
                     project_id=provider_data.get('project_id'),
                     location=provider_data.get('location'),
@@ -569,7 +569,7 @@ class ConfigManager:
         self, 
         provider: str, 
         model: str,
-        override_params: GenerationParams | None = None
+        override_params: GenerationParams | None = Nonez
     ) -> GenerationParams:
         """
         Get merged generation parameters with proper precedence.
