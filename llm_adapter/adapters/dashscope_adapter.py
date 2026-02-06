@@ -39,8 +39,8 @@ class DashScopeAdapter(ProviderAdapter):
         self, 
         api_key: str, 
         base_url: str | None = None,
-        mode: Literal["dashscope", "http"] = "dashscope",
-        use_international: bool = False,
+        mode: Literal["dashscope", "http"] | None = None,
+        use_international: bool | None = None,
         **kwargs
     ):
         """
@@ -50,11 +50,21 @@ class DashScopeAdapter(ProviderAdapter):
             api_key: DashScope API key (阿里云百炼API Key)
             base_url: Optional custom base URL
             mode: "dashscope" for official SDK (default), "http" for direct API calls
+                  If not provided, reads from config (default: "dashscope")
             use_international: Use international endpoint (dashscope-intl.aliyuncs.com)
+                              If not provided, reads from config (default: False)
             **kwargs: Additional configuration
         """
         super().__init__(api_key, **kwargs)
+        
+        # Read mode from config if not explicitly provided
+        if mode is None:
+            mode = self.config.get("mode", "dashscope")
         self.mode = mode
+        
+        # Read use_international from config if not explicitly provided
+        if use_international is None:
+            use_international = self.config.get("use_international", False)
         self.use_international = use_international
         
         # Set base URL
