@@ -12,6 +12,7 @@ import httpx
 
 from ..models import TokenUsage
 from ..fallback_tracker import get_fallback_tracker
+from ..request_logger import get_logger
 from .base import ProviderAdapter, ProviderError, RawLLMResult
 
 
@@ -77,6 +78,7 @@ class GeminiAdapter(ProviderAdapter):
         self._vertex_model_cache = {}  # Cache for Vertex AI models
         self._client: httpx.AsyncClient | None = None
         self._fallback_tracker = get_fallback_tracker()
+        self._logger = get_logger(self.name)  # 添加日志记录器
         
         if mode == "http":
             # Get HTTP client config from config manager

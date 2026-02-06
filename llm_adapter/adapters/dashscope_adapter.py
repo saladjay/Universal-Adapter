@@ -3,10 +3,12 @@
 """
 
 import json
+import time
 
 import httpx
 
 from ..models import TokenUsage
+from ..request_logger import get_logger
 from .base import ProviderAdapter, ProviderError, RawLLMResult
 
 
@@ -32,6 +34,9 @@ class DashScopeAdapter(ProviderAdapter):
         """
         super().__init__(api_key, **kwargs)
         self.base_url = base_url or self.DEFAULT_BASE_URL
+        
+        # 初始化日志记录器
+        self._logger = get_logger(self.name)
         
         # Get HTTP client config from config manager
         http_config = self.config.get("http_client", {})
@@ -74,61 +79,84 @@ class DashScopeAdapter(ProviderAdapter):
         Raises:
             ProviderError: If API call fails
         """
-        url = f"{self.base_url}/services/aigc/text-generation/generation"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": model,
-            "input": {
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            "parameters": {
-                "result_format": "message",
-            },
-        }
+        start_time = time.time()
+        error_message = None
+        result = None
         
         try:
+            url = f"{self.base_url}/services/aigc/text-generation/generation"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": model,
+                "input": {
+                    "messages": [{"role": "user", "content": prompt}]
+                },
+                "parameters": {
+                    "result_format": "message",
+                },
+            }
+            
             response = await self._client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
-        except httpx.TimeoutException:
-            raise ProviderError(self.name, "Request timed out")
-        except httpx.HTTPStatusError as e:
-            raise ProviderError(
-                self.name,
-                f"API error: {e.response.text}",
-                status_code=e.response.status_code
-            )
-        except Exception as e:
-            raise ProviderError(self.name, f"Request failed: {str(e)}")
-        
-        # Check for API-level errors
-        if "code" in data and data["code"] != "":
-            raise ProviderError(
-                self.name,
-                f"API error: {data.get('message', 'Unknown error')} (code: {data.get('code')})"
-            )
-        
-        # Extract response text
-        try:
+            
+            # Check for API-level errors
+            if "code" in data and data["code"] != "":
+                error_message = f"API error: {data.get('message', 'Unknown error')} (code: {data.get('code')})"
+                raise ProviderError(self.name, error_message)
+            
+            # Extract response text
             output = data["output"]
             text = output["choices"][0]["message"]["content"]
+            
+            # Extract token usage from response
+            usage = data.get("usage", {})
+            input_tokens = usage.get("input_tokens")
+            output_tokens = usage.get("output_tokens")
+            
+            result = RawLLMResult(
+                text=text,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                raw_response=data
+            )
+            
+            return result
+            
+        except httpx.TimeoutException:
+            error_message = "Request timed out"
+            raise ProviderError(self.name, error_message)
+        except httpx.HTTPStatusError as e:
+            error_message = f"API error: {e.response.text}"
+            raise ProviderError(
+                self.name,
+                error_message,
+                status_code=e.response.status_code
+            )
         except (KeyError, IndexError) as e:
-            raise ProviderError(self.name, f"Invalid response format: {e}")
+            error_message = f"Invalid response format: {e}"
+            raise ProviderError(self.name, error_message)
+        except Exception as e:
+            if not error_message:
+                error_message = f"Request failed: {str(e)}"
+            raise ProviderError(self.name, error_message)
         
-        # Extract token usage from response
-        usage = data.get("usage", {})
-        input_tokens = usage.get("input_tokens")
-        output_tokens = usage.get("output_tokens")
-        
-        return RawLLMResult(
-            text=text,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            raw_response=data
-        )
+        finally:
+            # 记录请求日志
+            duration_ms = (time.time() - start_time) * 1000
+            self._logger.log_request(
+                model=model,
+                prompt=prompt,
+                response_text=result.text if result else None,
+                input_tokens=result.input_tokens if result else None,
+                output_tokens=result.output_tokens if result else None,
+                duration_ms=duration_ms,
+                success=result is not None,
+                error_message=error_message,
+            )
 
     async def stream(self, prompt: str, model: str):
         """Stream response text from DashScope."""
