@@ -47,11 +47,11 @@ class GeminiAdapter(ProviderAdapter):
     def __init__(
         self, 
         api_key: str, 
-        mode: Literal["http", "sdk", "vertex"] = "http",
+        mode: Literal["http", "sdk", "vertex"] | None = None,
         project_id: Optional[str] = None,
         location: Optional[str] = None,
-        enable_region_fallback: bool = True,
-        fallback_location: str = "us-central1",
+        enable_region_fallback: bool | None = None,
+        fallback_location: str | None = None,
         **kwargs
     ):
         """
@@ -60,19 +60,41 @@ class GeminiAdapter(ProviderAdapter):
         Args:
             api_key: Google API key (not used in vertex mode)
             mode: "http" for direct API calls, "sdk" for official SDK, "vertex" for Vertex AI
+                  If not provided, reads from config (default: "http")
             project_id: GCP project ID (required for vertex mode)
+                       If not provided, reads from config
             location: GCP region (required for vertex mode)
                       - "global" (recommended): Google auto-selects best available zone
                       - Specific region: "us-central1", "europe-west1", "asia-southeast1", etc.
+                      If not provided, reads from config
             enable_region_fallback: Enable automatic fallback to global region on failure
-            fallback_location: Fallback region to use (default: "us-central1")
+                                   If not provided, reads from config (default: True)
+            fallback_location: Fallback region to use
+                              If not provided, reads from config (default: "us-central1")
             **kwargs: Additional configuration
         """
         super().__init__(api_key, **kwargs)
+        
+        # Read from config if not explicitly provided
+        if mode is None:
+            mode = self.config.get("mode", "http")
         self.mode = mode
+        
+        if project_id is None:
+            project_id = self.config.get("project_id")
         self.project_id = project_id
+        
+        if location is None:
+            location = self.config.get("location")
         self.location = location
+        
+        if enable_region_fallback is None:
+            enable_region_fallback = self.config.get("enable_region_fallback", True)
         self.enable_region_fallback = enable_region_fallback
+        
+        if fallback_location is None:
+            fallback_location = self.config.get("fallback_location", "us-central1")
+        self.fallback_location = fallback_location
         self.fallback_location = fallback_location
         self._sdk_client = None
         self._vertex_model_cache = {}  # Cache for Vertex AI models
