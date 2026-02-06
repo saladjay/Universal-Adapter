@@ -3,6 +3,7 @@ Router module for intelligent LLM provider selection.
 Implements quality-based routing strategy with automatic fallback.
 """
 
+import os
 from dataclasses import dataclass
 from typing import Literal
 
@@ -40,19 +41,17 @@ class Router:
     QUALITY_ROUTES: dict[str, list[tuple[str, str]]] = {
         # (provider, model_tier)
         "low": [
-            ("openrouter", "cheap"),
             ("cloudflare", "cheap"),
             ("huggingface", "cheap"),
             ("dashscope", "normal"),  # qwen-* (configured per config.yaml)
         ],
         "medium": [
+            ("dashscope", "normal"),  # qwen-* (configured per config.yaml)
             ("openrouter", "normal"),
             ("openai", "cheap"),      # gpt-4o-mini
             ("gemini", "cheap"),      # gemini-1.5-flash
-            ("dashscope", "normal"),  # qwen-* (configured per config.yaml)
         ],
         "high": [
-            ("openrouter", "premium"),
             ("openai", "premium"),    # gpt-4-turbo
             ("gemini", "premium"),    # gemini-1.5-pro
             ("dashscope", "premium"), # qwen-* (configured per config.yaml)
@@ -86,6 +85,10 @@ class Router:
             
         Raises:
             RouterError: If no suitable provider is available
+            
+        Environment Variables:
+            LLM_DISABLE_QUALITY_ROUTING: If set to 'true', '1', or 'yes', 
+                                         always use default_provider from config
         """
         if quality not in self.QUALITY_ROUTES:
             raise RouterError(f"Invalid quality level: {quality}")
@@ -93,6 +96,9 @@ class Router:
         excluded = excluded_providers or set()
         excluded = excluded.union(self._unavailable_providers)
 
+        # Check if quality routing is disabled via environment variable
+        disable_routing = os.getenv("LLM_DISABLE_QUALITY_ROUTING", "").lower() in ("true", "1", "yes")
+        
         # Prefer default_provider when configured and available
         tier_by_quality: dict[str, str] = {
             "low": "cheap",
@@ -100,6 +106,35 @@ class Router:
             "high": "premium",
         }
         default_provider = self.config_manager.config.llm.default_provider
+        
+        # If routing is disabled, ONLY use default_provider
+        if disable_routing:
+            if not default_provider:
+                raise RouterError(
+                    "LLM_DISABLE_QUALITY_ROUTING is enabled but no default_provider "
+                    "is configured in config.yaml"
+                )
+            if default_provider in excluded:
+                raise RouterError(
+                    f"LLM_DISABLE_QUALITY_ROUTING is enabled but default_provider "
+                    f"'{default_provider}' is excluded"
+                )
+            
+            preferred_tier = tier_by_quality.get(quality)
+            if preferred_tier:
+                model = self._get_model_for_tier(default_provider, preferred_tier)
+                if model:
+                    return RouteResult(
+                        provider=default_provider,
+                        model=model,
+                        is_fallback=False,
+                    )
+            raise RouterError(
+                f"Default provider '{default_provider}' does not have a model "
+                f"configured for tier '{preferred_tier}'"
+            )
+        
+        # Normal routing: prefer default_provider first, then fallback to QUALITY_ROUTES
         if default_provider and default_provider not in excluded:
             preferred_tier = tier_by_quality.get(quality)
             if preferred_tier:
