@@ -11,6 +11,7 @@ import time
 import asyncio
 import os
 import sys
+import time
 from llm_adapter.adapters.dashscope_adapter import DashScopeAdapter
 
 
@@ -71,7 +72,8 @@ async def quick_start():
             prompt="你好，请介绍一下你自己。",
             model="qwen-turbo"  # 可选: qwen-turbo, qwen-plus, qwen-max
         )
-        print(f'所花时间：{time.time() - start}ms')
+        duration_ms = (time.time() - start) * 1000  # 转换为毫秒
+        print(f'所花时间：{duration_ms:.2f}ms')
         print(f"\n回答: {result.text}")
         print(f"\nToken 使用: 输入 {result.input_tokens}, 输出 {result.output_tokens}")
         
