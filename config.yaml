@@ -77,7 +77,7 @@ providers:
       cheap: qwen-turbo
       normal: qwen-turbo
       premium: qwen-turbo
-      multimodal: qwen-vl-plus
+      multimodal: qwen3-vl-30b-a3b-instruct
     # DashScope-specific params
     generation_params:
       temperature: 0.7
