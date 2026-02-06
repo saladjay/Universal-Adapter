@@ -162,7 +162,7 @@ profile:
 
 
 proxy:
-  enable: true
+  enable: false
   host: http://${PROXY_HOST}
   port: ${PROXY_PORT}
 
