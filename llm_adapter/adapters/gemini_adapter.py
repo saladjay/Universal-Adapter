@@ -60,7 +60,9 @@ class GeminiAdapter(ProviderAdapter):
             api_key: Google API key (not used in vertex mode)
             mode: "http" for direct API calls, "sdk" for official SDK, "vertex" for Vertex AI
             project_id: GCP project ID (required for vertex mode)
-            location: GCP region (required for vertex mode, e.g., "asia-southeast1")
+            location: GCP region (required for vertex mode)
+                      - "global" (recommended): Google auto-selects best available zone
+                      - Specific region: "us-central1", "europe-west1", "asia-southeast1", etc.
             enable_region_fallback: Enable automatic fallback to global region on failure
             fallback_location: Fallback region to use (default: "us-central1")
             **kwargs: Additional configuration
@@ -135,7 +137,9 @@ class GeminiAdapter(ProviderAdapter):
         if not self.location:
             raise ProviderError(
                 self.name,
-                "Vertex AI mode requires 'location' parameter (e.g., 'asia-southeast1')"
+                "Vertex AI mode requires 'location' parameter. "
+                "Use 'global' (recommended) for automatic zone selection, "
+                "or specific region like 'us-central1', 'europe-west1', etc."
             )
         
         # Check for required environment variables
