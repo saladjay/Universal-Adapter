@@ -4,7 +4,54 @@ Abstract base class for LLM provider adapters.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import AsyncIterator
+from typing import AsyncIterator, Literal, Union, List
+from enum import Enum
+
+
+class ImageInputType(str, Enum):
+    """Type of image input."""
+    URL = "url"
+    BASE64 = "base64"
+
+
+@dataclass
+class ImageInput:
+    """
+    Image input for multimodal requests.
+    
+    Supports two modes:
+    - URL mode: Provide image via URL
+    - Base64 mode: Provide image as base64-encoded string
+    """
+    type: ImageInputType
+    data: str  # URL or base64 string
+    mime_type: str | None = None  # e.g., "image/jpeg", "image/png" (required for base64)
+    
+    @classmethod
+    def from_url(cls, url: str) -> "ImageInput":
+        """Create ImageInput from URL."""
+        return cls(type=ImageInputType.URL, data=url)
+    
+    @classmethod
+    def from_base64(cls, base64_data: str, mime_type: str = "image/jpeg") -> "ImageInput":
+        """Create ImageInput from base64 string."""
+        return cls(type=ImageInputType.BASE64, data=base64_data, mime_type=mime_type)
+
+
+@dataclass
+class MultimodalContent:
+    """
+    Content for multimodal requests.
+    
+    Can contain text and/or images.
+    """
+    text: str | None = None
+    images: List[ImageInput] | None = None
+    
+    def __post_init__(self):
+        if not self.text and not self.images:
+            raise ValueError("MultimodalContent must have at least text or images")
+
 
 from ..models import TokenUsage
 
@@ -16,6 +63,12 @@ class RawLLMResult:
     input_tokens: int | None = None
     output_tokens: int | None = None
     raw_response: dict | None = None
+    
+    # OpenRouter-specific fields (from HTTP headers)
+    cost_usd: float | None = None
+    provider: str | None = None
+    actual_model: str | None = None
+    latency_ms: int | None = None
 
 
 class ProviderAdapter(ABC):
@@ -56,6 +109,83 @@ class ProviderAdapter(ABC):
             ProviderError: If the API call fails
         """
         pass
+    
+    async def generate_multimodal(
+        self, 
+        content: MultimodalContent, 
+        model: str
+    ) -> RawLLMResult:
+        """
+        Generate a response from a multimodal LLM (text + images).
+        
+        This is an optional method. Adapters that support multimodal input
+        should override this method. By default, it raises NotImplementedError.
+        
+        Args:
+            content: MultimodalContent with text and/or images
+            model: The model identifier to use (must support multimodal)
+            
+        Returns:
+            RawLLMResult containing the generated text and token information
+            
+        Raises:
+            NotImplementedError: If the adapter doesn't support multimodal
+            ProviderError: If the API call fails
+            
+        Example:
+            # URL mode
+            content = MultimodalContent(
+                text="What's in this image?",
+                images=[ImageInput.from_url("https://example.com/image.jpg")]
+            )
+            result = await adapter.generate_multimodal(content, "gpt-4-vision")
+            
+            # Base64 mode
+            content = MultimodalContent(
+                text="Describe this image",
+                images=[ImageInput.from_base64(base64_str, "image/jpeg")]
+            )
+            result = await adapter.generate_multimodal(content, "gemini-pro-vision")
+        """
+        raise NotImplementedError(
+            f"{self.name} adapter does not support multimodal generation. "
+            f"Please use a multimodal-capable model and adapter."
+        )
+    
+    async def stream_multimodal(
+        self,
+        content: MultimodalContent,
+        model: str
+    ) -> AsyncIterator[str]:
+        """
+        Stream response from a multimodal LLM (text + images).
+        
+        This is an optional method. Adapters that support multimodal streaming
+        should override this method. By default, it raises NotImplementedError.
+        
+        Args:
+            content: MultimodalContent with text and/or images
+            model: The model identifier to use (must support multimodal)
+            
+        Yields:
+            Text chunks as they are generated
+            
+        Raises:
+            NotImplementedError: If the adapter doesn't support multimodal streaming
+            ProviderError: If the API call fails
+            
+        Example:
+            content = MultimodalContent(
+                text="Describe this image",
+                images=[ImageInput.from_url("https://example.com/image.jpg")]
+            )
+            async for chunk in adapter.stream_multimodal(content, model):
+                print(chunk, end="", flush=True)
+        """
+        raise NotImplementedError(
+            f"{self.name} adapter does not support multimodal streaming. "
+            f"Please use a multimodal-capable model and adapter."
+        )
 
     async def stream(self, prompt: str, model: str) -> AsyncIterator[str]:
         """

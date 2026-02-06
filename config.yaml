@@ -37,12 +37,15 @@ providers:
     mode: vertex  # Use Vertex AI for paid tier with higher quotas
     # Vertex AI specific settings
     project_id: wingy-e87ee
-    location: asia-southeast1
+    # Location options:
+    # - "global" (recommended): Google auto-selects best available zone worldwide
+    # - Specific region: "us-central1", "us-east4", "europe-west1", "asia-southeast1", etc.
+    location: global  # Let Google auto-select the best zone
     models:
-      cheap: gemini-2.0-flash-lite
-      normal: gemini-2.0-flash-lite
-      premium: gemini-2.0-flash
-      multimodal: gemini-2.0-flash
+      cheap: gemini-2.0-flash-lite-001
+      normal: gemini-2.0-flash-lite-001
+      premium: gemini-2.0-flash-lite-001
+      multimodal: gemini-2.0-flash-lite-001
     # Gemini-specific generation params
     generation_params:
       temperature: 0.7
@@ -67,19 +70,22 @@ providers:
       multimodal: meta-llama/Llama-3.1-8B-Instruct
 
   dashscope:
-    api_key: ${DASHSCOPY_API_KEY}
-    base_url: ${DASHSCOPY_BASE_URL}
+    api_key: ${DASHSCOPE_API_KEY}
+    base_url: ${DASHSCOPE_BASE_URL}
     models:
-      cheap: qwen-flash
-      normal: qwen-flash
-      premium: qwen-flash
-      multimodal: qwen-vl-plus
+      cheap: qwen-turbo
+      normal: qwen-turbo
+      premium: qwen-turbo
+      multimodal: qwen3-vl-30b-a3b-thinking
     # DashScope-specific params
     generation_params:
       temperature: 0.7
       top_p: 0.8
       seed: 1234  # For reproducible results
-
+    model_params:
+      qwen3-vl-30b-a3b-thinking:
+        temperature: 0.05
+        
   openrouter:
     api_key: ${OPENROUTER_API_KEY}
     base_url: ${OPENROUTER_BASE_URL}
