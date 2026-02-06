@@ -73,16 +73,19 @@ providers:
     api_key: ${DASHSCOPE_API_KEY}
     base_url: ${DASHSCOPE_BASE_URL}
     models:
-      cheap: qwen-flash
-      normal: qwen-flash
-      premium: qwen-flash
-      multimodal: qwen-vl-plus
+      cheap: qwen-turbo
+      normal: qwen-turbo
+      premium: qwen-turbo
+      multimodal: qwen3-vl-30b-a3b-thinking
     # DashScope-specific params
     generation_params:
       temperature: 0.7
       top_p: 0.8
       seed: 1234  # For reproducible results
-
+    model_params:
+      qwen3-vl-30b-a3b-thinking:
+        temperature: 0.05
+        
   openrouter:
     api_key: ${OPENROUTER_API_KEY}
     base_url: ${OPENROUTER_BASE_URL}
