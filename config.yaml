@@ -70,8 +70,8 @@ providers:
       multimodal: meta-llama/Llama-3.1-8B-Instruct
 
   dashscope:
-    api_key: ${DASHSCOPY_API_KEY}
-    base_url: ${DASHSCOPY_BASE_URL}
+    api_key: ${DASHSCOPE_API_KEY}
+    base_url: ${DASHSCOPE_BASE_URL}
     models:
       cheap: qwen-flash
       normal: qwen-flash

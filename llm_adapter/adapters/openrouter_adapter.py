@@ -12,7 +12,7 @@ import httpx
 
 from ..models import TokenUsage
 from ..request_logger import get_logger
-from .base import ProviderAdapter, ProviderError, RawLLMResult
+from .base import ProviderAdapter, ProviderError, RawLLMResult, MultimodalContent, ImageInput, ImageInputType
 
 
 class OpenRouterAdapter(ProviderAdapter):
@@ -245,6 +245,222 @@ class OpenRouterAdapter(ProviderAdapter):
                     continue
                 if content:
                     yield content
+    
+    async def generate_multimodal(
+        self,
+        content: MultimodalContent,
+        model: str
+    ) -> RawLLMResult:
+        """Generate multimodal response (text + images) using OpenRouter."""
+        start_time = time.time()
+        error_message = None
+        result = None
+        
+        try:
+            url = f"{self.base_url}/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            if self.site_url:
+                headers["HTTP-Referer"] = self.site_url
+            if self.site_name:
+                headers["X-Title"] = self.site_name
+            
+            # Build message content array
+            message_content = []
+            
+            # Add text
+            if content.text:
+                message_content.append({
+                    "type": "text",
+                    "text": content.text
+                })
+            
+            # Add images
+            if content.images:
+                for image in content.images:
+                    if image.type == ImageInputType.URL:
+                        message_content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image.data
+                            }
+                        })
+                    elif image.type == ImageInputType.BASE64:
+                        # OpenAI format: data:image/jpeg;base64,{base64_data}
+                        data_url = f"data:{image.mime_type};base64,{image.data}"
+                        message_content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": data_url
+                            }
+                        })
+            
+            payload = {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": message_content
+                    }
+                ],
+            }
+            
+            response = await self._client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Extract response text
+            text = data["choices"][0]["message"]["content"]
+            
+            # Extract token usage
+            usage = data.get("usage", {})
+            input_tokens = usage.get("prompt_tokens")
+            output_tokens = usage.get("completion_tokens")
+            
+            # Extract OpenRouter-specific metadata from headers
+            cost_usd = None
+            provider = None
+            actual_model = None
+            latency_ms = None
+            
+            if hasattr(response, 'headers'):
+                cost_header = response.headers.get("x-openrouter-generation-cost")
+                if cost_header:
+                    try:
+                        cost_usd = float(cost_header)
+                    except (ValueError, TypeError):
+                        pass
+                
+                provider = response.headers.get("x-openrouter-provider")
+                actual_model = response.headers.get("x-openrouter-model")
+                
+                latency_header = response.headers.get("x-openrouter-generation-time")
+                if latency_header:
+                    try:
+                        latency_ms = int(latency_header)
+                    except (ValueError, TypeError):
+                        pass
+            
+            result = RawLLMResult(
+                text=text,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                raw_response=data,
+                cost_usd=cost_usd,
+                provider=provider,
+                actual_model=actual_model,
+                latency_ms=latency_ms
+            )
+            
+            return result
+            
+        except httpx.TimeoutException:
+            error_message = "Request timed out"
+            raise ProviderError(self.name, error_message)
+        except httpx.HTTPStatusError as e:
+            error_message = f"API error: {e.response.text}"
+            raise ProviderError(
+                self.name,
+                error_message,
+                status_code=e.response.status_code
+            )
+        except (KeyError, IndexError) as e:
+            error_message = f"Invalid response format: {e}"
+            raise ProviderError(self.name, error_message)
+        except Exception as e:
+            if not error_message:
+                error_message = f"Request failed: {str(e)}"
+            raise ProviderError(self.name, error_message)
+        
+        finally:
+            # Log request
+            duration_ms = (time.time() - start_time) * 1000
+            prompt_text = content.text or "[multimodal content]"
+            self._logger.log_request(
+                model=model,
+                prompt=prompt_text,
+                response_text=result.text if result else None,
+                input_tokens=result.input_tokens if result else None,
+                output_tokens=result.output_tokens if result else None,
+                duration_ms=duration_ms,
+                success=result is not None,
+                error_message=error_message,
+            )
+    
+    async def stream_multimodal(
+        self,
+        content: MultimodalContent,
+        model: str
+    ):
+        """Stream multimodal response (text + images) using OpenRouter."""
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        if self.site_url:
+            headers["HTTP-Referer"] = self.site_url
+        if self.site_name:
+            headers["X-Title"] = self.site_name
+        
+        # Build message content array
+        message_content = []
+        
+        # Add text
+        if content.text:
+            message_content.append({
+                "type": "text",
+                "text": content.text
+            })
+        
+        # Add images
+        if content.images:
+            for image in content.images:
+                if image.type == ImageInputType.URL:
+                    message_content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image.data
+                        }
+                    })
+                elif image.type == ImageInputType.BASE64:
+                    data_url = f"data:{image.mime_type};base64,{image.data}"
+                    message_content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": data_url
+                        }
+                    })
+        
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": message_content
+                }
+            ],
+            "stream": True,
+        }
+        
+        async with self._client.stream("POST", url, headers=headers, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    payload = json.loads(data)
+                    delta = payload["choices"][0].get("delta", {})
+                    content_chunk = delta.get("content")
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+                if content_chunk:
+                    yield content_chunk
 
     async def aclose(self) -> None:
         if not self._client.is_closed:
