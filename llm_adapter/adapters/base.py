@@ -16,6 +16,12 @@ class RawLLMResult:
     input_tokens: int | None = None
     output_tokens: int | None = None
     raw_response: dict | None = None
+    
+    # OpenRouter-specific fields (from HTTP headers)
+    cost_usd: float | None = None
+    provider: str | None = None
+    actual_model: str | None = None
+    latency_ms: int | None = None
 
 
 class ProviderAdapter(ABC):
