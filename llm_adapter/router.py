@@ -46,10 +46,10 @@ class Router:
             ("dashscope", "normal"),  # qwen-* (configured per config.yaml)
         ],
         "medium": [
-            ("dashscope", "normal"),  # qwen-* (configured per config.yaml)
             ("openrouter", "normal"),
+            ("gemini", "cheap"),      # gemini-2.0-flash-lite (Vertex AI with higher quota)
+            ("dashscope", "normal"),  # qwen-* (configured per config.yaml)
             ("openai", "cheap"),      # gpt-4o-mini
-            ("gemini", "cheap"),      # gemini-1.5-flash
         ],
         "high": [
             ("openai", "premium"),    # gpt-4-turbo

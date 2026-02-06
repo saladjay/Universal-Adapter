@@ -168,7 +168,7 @@ proxy:
 
 # HTTP Client Configuration (Optional)
 # Controls connection pool and timeout settings for all adapters
-# http_client:
-#   max_connections: 100              # Maximum concurrent connections (default: 100)
-#   max_keepalive_connections: 20    # Keep-alive connections for reuse (default: 20)
-#   timeout: 60.0                     # Request timeout in seconds (default: 60.0)
+http_client:
+  max_connections: 100              # Maximum concurrent connections (default: 100)
+  max_keepalive_connections: 20    # Keep-alive connections for reuse (default: 20)
+  timeout: 120.0                    # Request timeout in seconds (increased for stability)
