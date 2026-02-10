@@ -103,6 +103,8 @@ providers:
       google/gemini-3-flash-preview:
         temperature: 0.9
         max_tokens: 4096
+      mistralai/ministral-3b-2512:
+        max_tokens: 8000
 
 pricing:
   openai:
