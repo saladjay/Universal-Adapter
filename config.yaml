@@ -33,7 +33,7 @@ providers:
         max_tokens: 4096
 
   gemini:
-    api_key: REDACTED_GOOGLE_API_KEY
+    api_key: ${GEMINI_API_KEY}
     mode: vertex  # Use Vertex AI for paid tier with higher quotas
     # Vertex AI specific settings
     project_id: wingy-e87ee
