@@ -20,7 +20,7 @@ from llm_adapter.adapters.gemini_adapter import GeminiAdapter, ProviderError
 
 async def call_gemini_http():
     """HTTP 模式调用 (默认，无需额外依赖)"""
-    api_key = os.getenv("GEMINI_API_KEY", 'REDACTED_GOOGLE_API_KEY')
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         print("请设置 GEMINI_API_KEY 环境变量")
         return
@@ -41,7 +41,7 @@ async def call_gemini_http():
 
 async def call_gemini_sdk():
     """SDK 模式调用 (需要 pip install google-generativeai)"""
-    api_key = os.getenv("GEMINI_API_KEY", 'REDACTED_GOOGLE_API_KEY')
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         print("请设置 GEMINI_API_KEY 环境变量")
         return

@@ -15,7 +15,7 @@ from llm_adapter.adapters.dashscope_adapter import DashScopeAdapter
 
 async def main():
     # 从环境变量获取 API Key
-    api_key = os.getenv("DASHSCOPE_API_KEY", 'REDACTED_TOKEN')
+    api_key = os.getenv("DASHSCOPE_API_KEY")
     if not api_key:
         print("请设置 DASHSCOPE_API_KEY 环境变量")
         return
