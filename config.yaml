@@ -162,10 +162,9 @@ profile:
   trait_rules:
     min_confidence_to_count: 0.7
 
-
 proxy:
   enable: false
-  host: http://${PROXY_HOST}
+  host: ${PROXY_HOST}
   port: ${PROXY_PORT}
 
 # HTTP Client Configuration (Optional)
