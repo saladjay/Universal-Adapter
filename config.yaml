@@ -2,7 +2,12 @@
 # Environment variables can be referenced using ${VAR_NAME} syntax
 
 llm:
-  default_provider: dashscope
+  default_provider: ${LLM_DEFAULT_PROVIDER}
+  # Global default generation parameters (applied to all providers/models)
+  default_generation_params:
+    temperature: 0.7
+    max_tokens: 2048
+    top_p: 0.9
 
 providers:
   openai:
@@ -12,13 +17,41 @@ providers:
       cheap: gpt-4o-mini
       normal: gpt-4o
       premium: gpt-4-turbo
+      multimodal: gpt-4o
+    # Provider-level generation params (overrides global defaults)
+    generation_params:
+      temperature: 0.8
+      presence_penalty: 0.1
+      frequency_penalty: 0.1
+    # Model-specific params (overrides provider-level)
+    model_params:
+      gpt-4o-mini:
+        temperature: 0.5
+        max_tokens: 1024
+      gpt-4-turbo:
+        temperature: 0.9
+        max_tokens: 4096
 
   gemini:
-    api_key: REDACTED_GOOGLE_API_KEY
+    api_key: ${GEMINI_API_KEY}
+    mode: vertex  # Use Vertex AI for paid tier with higher quotas
+    # Vertex AI specific settings
+    project_id: wingy-e87ee
+    # Location options:
+    # - "global" (recommended): Google auto-selects best available zone worldwide
+    # - Specific region: "us-central1", "us-east4", "europe-west1", "asia-southeast1", etc.
+    location: global  # Let Google auto-select the best zone
     models:
-      cheap: gemini-2.5-flash
-      normal: gemini-2.5-flash
-      premium: gemini-2.5-flash
+      cheap: gemini-2.0-flash-lite-001
+      normal: gemini-2.0-flash-lite-001
+      premium: gemini-2.0-flash-lite-001
+      multimodal: gemini-2.0-flash-lite-001
+    # Gemini-specific generation params
+    generation_params:
+      temperature: 0.7
+      top_p: 0.95
+      top_k: 40
+      max_tokens: 2048
 
   # cloudflare:
   #   api_key: 
@@ -26,6 +59,7 @@ providers:
   #   models:
   #     cheap: "@cf/meta/llama-3-8b-instruct"
   #     normal: "@cf/meta/llama-3-8b-instruct"
+  #     multimodal: "@cf/meta/llama-3-8b-instruct"
 
   huggingface:
     api_key: 
@@ -33,22 +67,44 @@ providers:
     models:
       cheap: meta-llama/Llama-3.1-8B-Instruct
       normal: meta-llama/Llama-3.1-8B-Instruct
+      multimodal: meta-llama/Llama-3.1-8B-Instruct
 
   dashscope:
-    api_key: REDACTED_TOKEN
-    base_url: https://dashscope.aliyuncs.com/api/v1
+    api_key: ${DASHSCOPE_API_KEY}
+    base_url: ${DASHSCOPE_BASE_URL}
+    mode: dashscope  # Use HTTP mode (no SDK required)  http | dashscope
     models:
-      cheap: qwen-flash
-      normal: qwen-flash
-      premium: qwen-flash
-
+      cheap: qwen-turbo
+      normal: qwen-turbo
+      premium: qwen-turbo
+      multimodal: qwen3-vl-30b-a3b-instruct
+    # DashScope-specific params
+    generation_params:
+      temperature: 0.7
+      top_p: 0.8
+      seed: 1234  # For reproducible results
+    model_params:
+      qwen3-vl-30b-a3b-thinking:
+        temperature: 0.05
+        
   openrouter:
-    api_key: 
-    base_url: https://openrouter.ai/api/v1
+    api_key: ${OPENROUTER_API_KEY}
+    base_url: ${OPENROUTER_BASE_URL}
     models:
-      cheap: meta-llama/llama-3.1-8b-instruct
-      normal: anthropic/claude-3.5-sonnet
-      premium: anthropic/claude-3-opus
+      cheap: qwen/qwen3-32b:nitro
+      normal: qwen/qwen3-32b:nitro
+      premium: google/gemini-2.0-flash-001
+      multimodal:  mistralai/ministral-3b-2512
+    # OpenRouter-specific params
+    generation_params:
+      temperature: 0.75
+      max_tokens: 3000
+    model_params:
+      google/gemini-3-flash-preview:
+        temperature: 0.9
+        max_tokens: 4096
+      mistralai/ministral-3b-2512:
+        max_tokens: 8000
 
 pricing:
   openai:
@@ -105,3 +161,16 @@ pricing:
 profile:
   trait_rules:
     min_confidence_to_count: 0.7
+
+
+proxy:
+  enable: false
+  host: http://proxy.zhizitech.org
+  port: 10803
+
+# HTTP Client Configuration (Optional)
+# Controls connection pool and timeout settings for all adapters
+http_client:
+  max_connections: 100              # Maximum concurrent connections (default: 100)
+  max_keepalive_connections: 20    # Keep-alive connections for reuse (default: 20)
+  timeout: 120.0                    # Request timeout in seconds (increased for stability)

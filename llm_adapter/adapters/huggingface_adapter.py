@@ -30,6 +30,33 @@ class HuggingFaceAdapter(ProviderAdapter):
         """
         super().__init__(api_key, **kwargs)
         self.default_model = default_model or "meta-llama/Llama-3.1-8B-Instruct"
+        
+        # Get HTTP client config from config manager
+        http_config = self.config.get("http_client", {})
+        max_connections = http_config.get("max_connections", 100)
+        max_keepalive = http_config.get("max_keepalive_connections", 20)
+        timeout = http_config.get("timeout", 120.0)
+        
+        # Build client kwargs with proxy support for different httpx versions
+        client_kwargs = {
+            "timeout": timeout,
+            "limits": httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive,
+            ),
+        }
+        
+        # Handle proxy configuration for different httpx versions
+        proxy_url = self.config.get("proxy_url")
+        if proxy_url:
+            try:
+                # Try newer httpx versions (0.24+) that use 'proxy' parameter
+                self._client = httpx.AsyncClient(proxy=proxy_url, **client_kwargs)
+            except TypeError:
+                # Fall back to older httpx versions that use 'proxies' parameter
+                self._client = httpx.AsyncClient(proxies=proxy_url, **client_kwargs)
+        else:
+            self._client = httpx.AsyncClient(**client_kwargs)
     
     async def generate(self, prompt: str, model: str) -> RawLLMResult:
         """
@@ -49,38 +76,37 @@ class HuggingFaceAdapter(ProviderAdapter):
         url = f"{self.BASE_URL}/{model_to_use}"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         payload = {
             "inputs": prompt,
             "parameters": {
                 "max_new_tokens": 1024,
-                "return_full_text": False
-            }
+                "return_full_text": False,
+            },
         }
         
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            try:
-                response = await client.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-                data = response.json()
-            except httpx.TimeoutException:
-                raise ProviderError(self.name, "Request timed out")
-            except httpx.HTTPStatusError as e:
-                # Handle specific HuggingFace errors
-                if e.response.status_code == 503:
-                    raise ProviderError(
-                        self.name,
-                        "Model is loading, please retry in a few seconds",
-                        status_code=503
-                    )
+        try:
+            response = await self._client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.TimeoutException:
+            raise ProviderError(self.name, "Request timed out")
+        except httpx.HTTPStatusError as e:
+            # Handle specific HuggingFace errors
+            if e.response.status_code == 503:
                 raise ProviderError(
                     self.name,
-                    f"API error: {e.response.text}",
-                    status_code=e.response.status_code
+                    "Model is loading, please retry in a few seconds",
+                    status_code=503
                 )
-            except Exception as e:
-                raise ProviderError(self.name, f"Request failed: {str(e)}")
+            raise ProviderError(
+                self.name,
+                f"API error: {e.response.text}",
+                status_code=e.response.status_code
+            )
+        except Exception as e:
+            raise ProviderError(self.name, f"Request failed: {str(e)}")
         
         # Extract response text
         # HuggingFace returns a list of generated texts
@@ -131,6 +157,9 @@ class HuggingFaceAdapter(ProviderAdapter):
             input_tokens=input_tokens,
             output_tokens=output_tokens
         )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
     
     def _estimate_token_count(self, text: str) -> int:
         """

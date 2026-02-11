@@ -2,6 +2,8 @@
 Cloudflare Workers AI provider adapter implementation.
 """
 
+import json
+
 import httpx
 
 from ..models import TokenUsage
@@ -34,6 +36,33 @@ class CloudflareAdapter(ProviderAdapter):
         """
         super().__init__(api_key, **kwargs)
         self.account_id = account_id or kwargs.get('account_id', '')
+        
+        # Get HTTP client config from config manager
+        http_config = self.config.get("http_client", {})
+        max_connections = http_config.get("max_connections", 100)
+        max_keepalive = http_config.get("max_keepalive_connections", 20)
+        timeout = http_config.get("timeout", 60.0)
+        
+        # Build client kwargs with proxy support for different httpx versions
+        client_kwargs = {
+            "timeout": timeout,
+            "limits": httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive,
+            ),
+        }
+        
+        # Handle proxy configuration for different httpx versions
+        proxy_url = self.config.get("proxy_url")
+        if proxy_url:
+            try:
+                # Try newer httpx versions (0.24+) that use 'proxy' parameter
+                self._client = httpx.AsyncClient(proxy=proxy_url, **client_kwargs)
+            except TypeError:
+                # Fall back to older httpx versions that use 'proxies' parameter
+                self._client = httpx.AsyncClient(proxies=proxy_url, **client_kwargs)
+        else:
+            self._client = httpx.AsyncClient(**client_kwargs)
     
     async def generate(self, prompt: str, model: str) -> RawLLMResult:
         """
@@ -55,27 +84,26 @@ class CloudflareAdapter(ProviderAdapter):
         url = f"{self.BASE_URL}/{self.account_id}/ai/run/{model}"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         payload = {
-            "messages": [{"role": "user", "content": prompt}]
+            "messages": [{"role": "user", "content": prompt}],
         }
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            try:
-                response = await client.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-                data = response.json()
-            except httpx.TimeoutException:
-                raise ProviderError(self.name, "Request timed out")
-            except httpx.HTTPStatusError as e:
-                raise ProviderError(
-                    self.name,
-                    f"API error: {e.response.text}",
-                    status_code=e.response.status_code
-                )
-            except Exception as e:
-                raise ProviderError(self.name, f"Request failed: {str(e)}")
+        try:
+            response = await self._client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.TimeoutException:
+            raise ProviderError(self.name, "Request timed out")
+        except httpx.HTTPStatusError as e:
+            raise ProviderError(
+                self.name,
+                f"API error: {e.response.text}",
+                status_code=e.response.status_code
+            )
+        except Exception as e:
+            raise ProviderError(self.name, f"Request failed: {str(e)}")
         
         # Check for API errors
         if not data.get("success", False):
@@ -98,6 +126,47 @@ class CloudflareAdapter(ProviderAdapter):
             output_tokens=None,
             raw_response=data
         )
+
+    async def stream(self, prompt: str, model: str):
+        """Stream response text from Cloudflare Workers AI."""
+        if not self.account_id:
+            raise ProviderError(self.name, "account_id is required for Cloudflare")
+
+        url = f"{self.BASE_URL}/{self.account_id}/ai/run/{model}"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        payload = {
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+        }
+
+        async with self._client.stream("POST", url, headers=headers, json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                if line.startswith("data: "):
+                    data = line[6:].strip()
+                else:
+                    data = line.strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    payload = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                result = payload.get("result", payload)
+                text = None
+                if isinstance(result, dict):
+                    text = result.get("response") or result.get("text")
+                if text:
+                    yield text
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
     
     def estimate_tokens(self, prompt: str, output: str) -> TokenUsage:
         """

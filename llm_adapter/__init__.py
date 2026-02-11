@@ -35,6 +35,9 @@ from .router import Router, RouteResult, RouterError
 # Usage logger
 from .logger import UsageLogger
 
+# Fallback tracker
+from .fallback_tracker import FallbackTracker, FallbackEvent, FallbackStats, get_fallback_tracker
+
 # Main adapter (unified entry point)
 from .adapter import LLMAdapter, LLMAdapterError, ValidationError
 
@@ -43,6 +46,9 @@ from .adapters import (
     ProviderAdapter,
     ProviderError,
     RawLLMResult,
+    ImageInput,
+    ImageInputType,
+    MultimodalContent,
     OpenAIAdapter,
     GeminiAdapter,
     CloudflareAdapter,
@@ -74,10 +80,18 @@ __all__ = [
     "RouterError",
     # Logger
     "UsageLogger",
+    # Fallback tracker
+    "FallbackTracker",
+    "FallbackEvent",
+    "FallbackStats",
+    "get_fallback_tracker",
     # Provider adapters
     "ProviderAdapter",
     "ProviderError",
     "RawLLMResult",
+    "ImageInput",
+    "ImageInputType",
+    "MultimodalContent",
     "OpenAIAdapter",
     "GeminiAdapter",
     "CloudflareAdapter",

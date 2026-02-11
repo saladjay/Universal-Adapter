@@ -1,93 +1,165 @@
 # LLMAdapter
 
+多海外 LLM 统一接入与计费监控系统（Python 包）。提供统一的异步调用入口、质量分级路由、成本计费和使用日志记录。
 
+## 框架与模块
 
-## Getting started
+- **定位**：非 Web 服务框架，而是一个 Python 库，提供统一的 LLM Adapter 接口。
+- **统一入口**：`LLMAdapter`（包含路由、计费、日志）
+- **配置管理**：`ConfigManager` 负责读取 `config.yaml` 并进行环境变量替换
+- **智能路由**：`Router` 根据质量等级（low/medium/high）选择 provider + model，并支持 fallback
+- **计费引擎**：`BillingEngine` 根据定价规则计算 token 成本
+- **日志记录**：`UsageLogger` 内存级日志记录，支持按用户/时间查询
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+核心模块路径：`llm_adapter/adapter.py`, `llm_adapter/router.py`, `llm_adapter/billing.py`, `llm_adapter/logger.py`
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## 环境要求
 
-## Add your files
+- Python >= 3.13
+- 依赖：`httpx`, `pyyaml`（详见 `pyproject.toml`）
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## 安装
+
+```bash
+python -m pip install -e .
+```
+
+## 配置
+
+默认读取根目录 `config.yaml`，支持 `${ENV_VAR}` 形式引用环境变量。
+
+### 配置字段说明
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `llm.default_provider` | string | 否 | 默认 provider（如 `openai`） |
+| `providers.<name>.api_key` | string | 是 | Provider 的 API Key（建议用环境变量） |
+| `providers.<name>.models.cheap` | string | 否 | 低成本模型标识 |
+| `providers.<name>.models.normal` | string | 否 | 常规模型标识 |
+| `providers.<name>.models.premium` | string | 否 | 高质量模型标识 |
+| `providers.<name>.default_model` | string | 否 | 无分级模型时使用的默认模型 |
+| `providers.<name>.base_url` | string | 否 | 自定义 API Base URL |
+| `providers.<name>.account_id` | string | 否 | Cloudflare Workers AI 需要的账户 ID |
+| `pricing.<provider>.<model>.input_cost_per_1m` | float | 否 | 输入 Token 费用（每 1M token） |
+| `pricing.<provider>.<model>.output_cost_per_1m` | float | 否 | 输出 Token 费用（每 1M token） |
+
+### Provider 参数细节
+
+- **OpenAI**：`api_key`, `base_url`（默认 `https://api.openai.com`）
+- **Gemini**：`api_key`
+- **Cloudflare Workers AI**：`api_key`, `account_id`, `base_url`
+- **HuggingFace**：`api_key`, `default_model`
+- **DashScope (Qwen)**：`api_key`, `base_url`
+- **OpenRouter**：`api_key`, `base_url`
+  - 兼容 OpenAI Chat Completions 接口，模型格式为 `provider/model`（如 `anthropic/claude-3.5-sonnet`）
+  - 额外可选参数：`site_url`, `site_name`（用于 OpenRouter 统计/排名）
+
+常用配置项：
+
+- `llm.default_provider`
+- `providers.<provider>.api_key`
+- `providers.<provider>.models.{cheap,normal,premium}`
+- `providers.<provider>.base_url` / `account_id`
+
+建议将 API Key 写入环境变量，并在 `config.yaml` 中引用，例如：
+
+```yaml
+providers:
+  openai:
+    api_key: ${OPENAI_API_KEY}
+    models:
+      cheap: gpt-4o-mini
+      normal: gpt-4o
+      premium: gpt-4-turbo
+```
+
+## 调用方式（核心 API）
+
+### 1) 统一异步调用
+
+```python
+from llm_adapter import LLMAdapter
+
+adapter = LLMAdapter(config_path="config.yaml")
+response = await adapter.generate(
+    user_id="user_001",
+    prompt="What is the capital of France?",
+    scene="chat",         # chat/coach/persona/system
+    quality="medium",     # low/medium/high
+)
+
+print(response.text)
+print(response.provider, response.model)
+print(response.input_tokens, response.output_tokens)
+print(response.cost_usd)
+```
+
+### 1.1) 流式输出（Streaming）
+
+```python
+from llm_adapter import LLMAdapter
+
+adapter = LLMAdapter(config_path="config.yaml")
+async for chunk in adapter.stream(
+    user_id="user_001",
+    prompt="Tell me a story.",
+    scene="chat",
+    quality="medium",
+):
+    print(chunk, end="", flush=True)
+```
+
+### 2) 路由与计费说明
+
+- 路由基于质量等级选择 provider + model
+- 成本计算：`(input_tokens / 1_000_000) * input_cost_per_1m + (output_tokens / 1_000_000) * output_cost_per_1m`
+- `UsageLogger` 默认记录每次调用的 token 与成本
+
+### 3) 运行内置示例
+
+`main.py` 提供完整示例（包含基础调用、计费、日志、完整集成）：
+
+```bash
+python main.py
+```
+
+## 运行测试
+
+使用 `pytest` 与 `hypothesis` 的性质测试：
+
+```bash
+python -m pytest
+```
+
+可单独跑某个模块：
+
+```bash
+python -m pytest tests/test_router_properties.py
+```
+
+## 支持的 Provider
+
+当前支持的 provider 入口（以配置为准）：
+
+- OpenAI
+- Gemini
+- Cloudflare Workers AI
+- HuggingFace Inference
+- DashScope（Qwen）
+- OpenRouter
+
+## 目录结构
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.zhizitech.org/ai/llmadapter.git
-git branch -M main
-git push -uf origin main
+llm_adapter/
+  adapter.py      # 统一入口
+  config.py       # 配置加载与校验
+  router.py       # 质量路由
+  billing.py      # 计费引擎
+  logger.py       # 使用日志
+  models.py       # 请求/响应/定价模型
+examples/
+  select_provider_example.py
+main.py           # 端到端演示
+config.yaml       # 默认配置模板
 ```
-
-## Integrate with your tools
-
-- [ ] [Set up project integrations](https://gitlab.zhizitech.org/ai/llmadapter/-/settings/integrations)
-
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
