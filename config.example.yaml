@@ -115,5 +115,5 @@ pricing:
 
 proxy:
   enable: false
-  host: http://${PROXY_HOST}
+  host: ${PROXY_HOST}
   port: ${PROXY_PORT}
