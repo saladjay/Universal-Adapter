@@ -11,3 +11,5 @@ wheels/
 
 .hypothesis/
 .pytest_cache/
+secrets-replacements.txt
+proxy-replacements.txt
